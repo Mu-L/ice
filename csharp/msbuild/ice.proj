@@ -5,22 +5,8 @@
     <PropertyGroup>
         <CppPlatform Condition="'$(Platform)' == 'x64'">x64</CppPlatform>
         <CppPlatform Condition="'$(Platform)' == 'x86' or '$(Platform)' == 'Win32'">Win32</CppPlatform>
-
-        <UwpPlatform Condition="'$(Platform)' == 'x64'">x64</UwpPlatform>
-        <UwpPlatform Condition="'$(Platform)' == 'x86' or '$(Platform)' == 'Win32'">x86</UwpPlatform>
-
-        <DefaultPlatformToolset Condition="'$(VisualStudioVersion)' == '12.0'">v120</DefaultPlatformToolset>
-        <DefaultPlatformToolset Condition="'$(VisualStudioVersion)' == '14.0'">v140</DefaultPlatformToolset>
-        <DefaultPlatformToolset Condition="'$(VisualStudioVersion)' == '15.0'">v141</DefaultPlatformToolset>
-        <DefaultPlatformToolset Condition="'$(VisualStudioVersion)' == '16.0'">v142</DefaultPlatformToolset>
-        <DefaultPlatformToolset Condition="'$(VisualStudioVersion)' == '17.0'">v143</DefaultPlatformToolset>
-
-        <NetStandardTargets>false</NetStandardTargets>
-    </PropertyGroup>
-
-    <!-- Our .NET Standard build on Windows requires Visual Studio 2022 -->
-    <PropertyGroup Condition="'$(VisualStudioVersion)' == '17.0' or '$(OS)' != 'Windows_NT'">
-        <NetStandardTargets>true</NetStandardTargets>
+        <!-- Default to x64 if Platform is not specified or is 'Any CPU' -->
+        <CppPlatform Condition="'$(CppPlatform)' == ''">x64</CppPlatform>
     </PropertyGroup>
 
     <Import Project="$(MSBuildThisFileDirectory)\..\..\config\icebuilder.props" />
@@ -31,277 +17,129 @@
       <Exec Command="rmdir /s /q $(MSBuildThisFileDirectory)packages" Condition="Exists('$(MSBuildThisFileDirectory)packages')" />
     </Target>
 
-    <!-- Targets required to build Slice compilers -->
+    <ItemGroup>
+        <DistSolution Include="ice.net.slnx">
+          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
+        </DistSolution>
+
+        <TestSolution Include="ice.net.test.slnx">
+          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
+        </TestSolution>
+    </ItemGroup>
+
+
+    <Target Name="NuGetRestoreDist" Condition="'$(ICE_BIN_DIST)' != 'all'">
+        <MSBuild Projects="@(DistSolution)"
+                 BuildInParallel="true"
+                 Properties="%(Properties)"
+                 Targets="Restore"/>
+    </Target>
+
+    <Target Name="BuildDist" DependsOnTargets="NuGetRestoreDist" Condition="'$(ICE_BIN_DIST)' != 'all'">
+        <MSBuild Projects="@(DistSolution)" BuildInParallel="true" Properties="%(Properties)"/>
+
+        <!-- Build iceboxnet with net8.0 target framework -->
+        <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\IceBox\msbuild\icebox\icebox.csproj"
+                 Properties="Configuration=$(Configuration);Platform=Any CPU;AppTargetFramework=net8.0;BaseIntermediateOutputPath=obj\net8.0\"
+                 Targets="Restore;Publish"
+                 />
+
+        <!-- Build iceboxnet with net472 target framework (Windows only) -->
+        <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\IceBox\msbuild\icebox\icebox.csproj"
+                 Properties="Configuration=$(Configuration);Platform=Any CPU;AppTargetFramework=net472;BaseIntermediateOutputPath=obj\net472\"
+                 Targets="Restore;Publish"
+                 Condition="'$(OS)' == 'Windows_NT'"
+                 />
+    </Target>
+
+    <Target Name="CleanDist" Condition="'$(ICE_BIN_DIST)' != 'all'">
+        <MSBuild Projects="@(DistSolution)"
+                 BuildInParallel="true"
+                 Properties="%(Properties)"
+                 Targets="Clean" />
+    </Target>
+
+    <Target Name="NuGetRestore" DependsOnTargets="NuGetRestoreDist">
+        <MSBuild Projects="@(TestSolution)" BuildInParallel="true" Properties="%(Properties)" Targets="Restore"/>
+    </Target>
+
+    <Target Name="Build" DependsOnTargets="BuildDist;NuGetRestore">
+        <MSBuild Projects="@(TestSolution)" BuildInParallel="true" Properties="%(Properties)"/>
+    </Target>
+
+    <Target Name="Clean" DependsOnTargets="CleanDist">
+        <MSBuild Projects="@(TestSolution)" BuildInParallel="true" Properties="%(Properties)" Targets="Clean" />
+    </Target>
+
+    <!-- Platform detection properties -->
+    <PropertyGroup>
+        <IceOSName Condition="$([MSBuild]::IsOSPlatform('Linux'))">linux</IceOSName>
+        <IceOSName Condition="$([MSBuild]::IsOSPlatform('Windows'))">windows</IceOSName>
+        <IceOSName Condition="$([MSBuild]::IsOSPlatform('OSX'))">macos</IceOSName>
+        <IceOSArch
+        >$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLower())</IceOSArch>
+        <IceSliceCompilerExe Condition="'$(OS)' == 'Windows_NT'">slice2cs.exe</IceSliceCompilerExe>
+        <IceSliceCompilerExe Condition="'$(OS)' != 'Windows_NT'">slice2cs</IceSliceCompilerExe>
+    </PropertyGroup>
+
+    <!-- Slice compiler staging: use SLICE2CS_STAGING_PATH for CI builds, or local C++ build for dev builds -->
     <Choose>
-        <When Condition="'$(VisualStudioVersion)' == '12.0' or '$(OS)' != 'Windows_NT'">
+        <When Condition="Exists('$(SLICE2CS_STAGING_PATH)')">
+            <!-- CI builds: include all platform compilers from staging path -->
             <ItemGroup>
-                <SliceCompilers Include="slice2cs;slice2html"/>
+                <_SliceCompiler Include="$(SLICE2CS_STAGING_PATH)/windows-x64/slice2cs.exe">
+                    <PackagePath>windows-x64</PackagePath>
+                </_SliceCompiler>
+                <_SliceCompiler Include="$(SLICE2CS_STAGING_PATH)/linux-x64/slice2cs">
+                    <PackagePath>linux-x64</PackagePath>
+                </_SliceCompiler>
+                <_SliceCompiler Include="$(SLICE2CS_STAGING_PATH)/linux-arm64/slice2cs">
+                    <PackagePath>linux-arm64</PackagePath>
+                </_SliceCompiler>
+                <_SliceCompiler Include="$(SLICE2CS_STAGING_PATH)/macos-arm64/slice2cs">
+                    <PackagePath>macos-arm64</PackagePath>
+                </_SliceCompiler>
             </ItemGroup>
         </When>
-
         <Otherwise>
+            <!-- Dev builds: include only current platform compiler from local C++ build -->
+            <PropertyGroup>
+                <_CppBinDir Condition="'$(OS)' == 'Windows_NT'">$(MSBuildThisFileDirectory)../../cpp/bin/$(CppPlatform)/$(Configuration)</_CppBinDir>
+                <_CppBinDir Condition="'$(OS)' != 'Windows_NT'">$(MSBuildThisFileDirectory)../../cpp/bin</_CppBinDir>
+            </PropertyGroup>
             <ItemGroup>
-                <SliceCompilers Include="c++98\slice2cs;c++98\slice2html"/>
+                <_SliceCompiler Include="$(_CppBinDir)/$(IceSliceCompilerExe)">
+                    <PackagePath>$(IceOSName)-$(IceOSArch)</PackagePath>
+                </_SliceCompiler>
             </ItemGroup>
         </Otherwise>
     </Choose>
 
-    <Target Name="SliceCompilers" Condition="'$(ICE_BIN_DIST)' != 'all'">
-        <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\cpp\msbuild\ice.proj"
-                 Targets="NuGetRestore"
-                 BuildInParallel="true"
-                 Condition="'$(OS)' == 'Windows_NT'"/>
+    <Target Name="NuGetPack">
+        <PropertyGroup>
+            <PackageOutputPath>$(MSBuildThisFileDirectory)</PackageOutputPath>
+            <ToolsDir>$(MSBuildThisFileDirectory)obj\package\tools</ToolsDir>
+        </PropertyGroup>
 
-        <MSBuild Projects="$(MSBuildThisFileDirectory)..\..\cpp\msbuild\ice.$(DefaultPlatformToolset).sln"
-                 Targets="@(SliceCompilers)"
-                 BuildInParallel="true"
-                 Properties="Platform=$(CppPlatform);Configuration=$(Configuration)"
-                 Condition="'$(OS)' == 'Windows_NT'"/>
+        <!-- Clean staging directories -->
+        <RemoveDir Directories="$(MSBuildThisFileDirectory)obj\package" />
 
-        <Exec Command="make @(SliceCompilers->'%(Identity)', ' ')"
-              WorkingDirectory="$(MSBuildThisFileDirectory)..\..\cpp"
-              Condition="'$(OS)' != 'Windows_NT'"/>
-    </Target>
-
-    <ItemGroup>
-        <!-- .NET 4.5 Solution files -->
-        <Net45DistSolution Include="ice.net45.sln">
-          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
-        </Net45DistSolution>
-
-        <Net45TestSolution Include="ice.net45.test.sln">
-          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
-        </Net45TestSolution>
-
-        <!-- .NET Standard Solution files -->
-        <NetStandardDistSolution Include="ice.netstandard2.0.sln">
-          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
-        </NetStandardDistSolution>
-
-        <NetStandardTestSolution Include="ice.netstandard2.0.test.sln">
-          <Properties>Configuration=$(Configuration);Platform=Any CPU;CppPlatform=$(CppPlatform)</Properties>
-        </NetStandardTestSolution>
-    </ItemGroup>
-
-    <!-- NET 4.5 Targets -->
-    <Target Name="Net45NuGetRestoreDist"
-            DependsOnTargets="GetNuget"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(OS)' == 'Windows_NT'">
-        <Exec Command="$(NuGetExe) restore @(Net45DistSolution)"/>
-    </Target>
-
-    <Target Name="Net45BuildDist"
-            DependsOnTargets="SliceCompilers;Net45NuGetRestore"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(OS)' == 'Windows_NT'">
-
-        <MSBuild Projects="@(Net45DistSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"/>
-
-    </Target>
-
-    <Target Name="Net45CleanDist"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(OS)' == 'Windows_NT'">
-
-        <MSBuild Projects="@(Net45DistSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Clean" />
-
-    </Target>
-
-    <Target Name="Net45NuGetRestore"
-            DependsOnTargets="GetNuget;Net45NuGetRestoreDist"
-            Condition="'$(OS)' == 'Windows_NT'">
-        <!-- The builder package should be already restored by dist build and we do not want to restore
-             the zeroc.ice.net packages if we are not building with the binary dist -->
-        <Exec Command="$(NuGetExe) restore @(Net45TestSolution)" Condition="'$(ICE_BIN_DIST)' == 'all'" />
-    </Target>
-
-    <Target Name="Net45Build"
-            DependsOnTargets="Net45BuildDist;Net45NuGetRestore"
-            Condition="'$(OS)' == 'Windows_NT'">
-
-        <MSBuild Projects="@(Net45TestSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"/>
-
-    </Target>
-
-    <Target Name="Net45Clean"
-            DependsOnTargets="Net45CleanDist"
-            Condition="'$(OS)' == 'Windows_NT'">
-
-        <MSBuild Projects="@(Net45TestSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Clean" />
-
-    </Target>
-
-    <!-- NET Standard Targets -->
-    <Target Name="NetStandardNuGetRestoreDist"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(NetStandardTargets)' == 'true'">
-        <MSBuild Projects="@(NetStandardDistSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Restore"/>
-    </Target>
-
-    <Target Name="NetStandardBuildDist"
-            DependsOnTargets="SliceCompilers;NetStandardNuGetRestoreDist"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(NetStandardTargets)' == 'true'">
-
-        <MSBuild Projects="@(NetStandardDistSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"/>
-
-    </Target>
-
-    <Target Name="NetStandardCleanDist"
-            Condition="'$(ICE_BIN_DIST)' != 'all' and '$(NetStandardTargets)' == 'true'">
-
-        <MSBuild Projects="@(NetStandardDistSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Clean" />
-
-    </Target>
-
-    <Target Name="NetStandardNuGetRestore"
-            DependsOnTargets="NetStandardNuGetRestoreDist"
-            Condition="'$(NetStandardTargets)' == 'true'">
-        <MSBuild Projects="@(NetStandardTestSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Restore"/>
-    </Target>
-
-    <Target Name="NetStandardBuild"
-            DependsOnTargets="NetStandardBuildDist;NetStandardNuGetRestore"
-            Condition="'$(NetStandardTargets)' == 'true'">
-
-        <MSBuild Projects="@(NetStandardTestSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"/>
-
-    </Target>
-
-    <Target Name="NetStandardClean"
-            DependsOnTargets="NetStandardCleanDist"
-            Condition="'$(NetStandardTargets)' == 'true'">
-
-        <MSBuild Projects="@(NetStandardTestSolution)"
-                 BuildInParallel="true"
-                 Properties="%(Properties)"
-                 Targets="Clean" />
-
-    </Target>
-
-    <!-- Meta targets -->
-
-    <Target Name="BuildDist" DependsOnTargets="NetStandardBuildDist;Net45BuildDist">
-    </Target>
-
-    <Target Name="CleanDist" DependsOnTargets="NetStandardCleanDist;Net45CleanDist">
-    </Target>
-
-    <Target Name="NuGetRestore" DependsOnTargets="NetStandardNuGetRestore;Net45NuGetRestore">
-    </Target>
-
-    <Target Name="Build" DependsOnTargets="NetStandardBuild;Net45Build">
-    </Target>
-
-    <Target Name="Clean" DependsOnTargets="NetStandardClean;Net45Clean">
-    </Target>
-
-    <Import Project="$(MSBuildThisFileDirectory)ice.common.targets" />
-
-    <Target Name="WindowsNuGetPack" DependsOnTargets="BuildDist" Condition="'$(OS)' == 'Windows_NT'">
-        <RemoveDir Directories="zeroc.ice.net" />
-
-        <!-- Build iceboxnet with net6.0 target framework (default) -->
-        <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\IceBox\msbuild\icebox\netstandard2.0\icebox.csproj"
-                 Properties="Configuration=$(Configuration);Platform=Any CPU;AppTargetFramework=net6.0;BaseIntermediateOutputPath=obj\net6.0\"
-                 Targets="Restore;Publish"
-                 Condition="'$(NetStandardTargets)' == 'true'"/>
-
-        <!-- Build iceboxnet with net7.0 target framework -->
-        <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\IceBox\msbuild\icebox\netstandard2.0\icebox.csproj"
-                 Properties="Configuration=$(Configuration);Platform=Any CPU;AppTargetFramework=net7.0;BaseIntermediateOutputPath=obj\net7.0\"
-                 Targets="Restore;Publish"
-                 Condition="'$(NetStandardTargets)' == 'true'"/>
-
+        <!-- Use MSBuild targets for packaging - builds the binaries into ..\lib\ -->
         <MSBuild Projects="ice.nuget.targets"
-                 Properties="PackageDirectory=zeroc.ice.net;NetStandardTargets=$(NetStandardTargets);
-                             CppPlatform=$(CppPlatform);Configuration=$(Configuration)"/>
+                 Properties="PackageDirectory=obj\package;Configuration=$(Configuration)"/>
 
-        <Copy SourceFiles="zeroc.ice.net.nuspec"
-              DestinationFolder="zeroc.ice.net" />
+        <!-- Stage slice2cs compilers -->
+        <Error Text="Slice compiler not found: %(_SliceCompiler.Identity)"
+               Condition="!Exists('%(_SliceCompiler.Identity)')" />
+        <Copy SourceFiles="@(_SliceCompiler)"
+              DestinationFolder="$(ToolsDir)\%(_SliceCompiler.PackagePath)" />
 
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)THIRD_PARTY_LICENSE.txt"
-              DestinationFiles="zeroc.ice.net\THIRD_PARTY_LICENSE.txt" />
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\ICE_LICENSE"
-              DestinationFiles="zeroc.ice.net\ICE_LICENSE.txt" />
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\LICENSE"
-              DestinationFiles="zeroc.ice.net\LICENSE.txt" />
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\README.md"
-              DestinationFiles="zeroc.ice.net\README.md" />
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\logo.png"
-              DestinationFiles="zeroc.ice.net\logo.png" />
-
-        <!-- Generate iceboxnet.exe.config with the correct assembly pulbic key token and assembly paths -->
-        <GetPublicKeyToken AssemblyFile="$(MSBuildThisFileDirectory)..\lib\net45\Ice.dll">
-            <Output TaskParameter="PublicKeyToken" PropertyName="PublicKeyToken"/>
-        </GetPublicKeyToken>
-
-        <WriteFileWithReplacements InputFile="$(MSBuildThisFileDirectory)iceboxnet.exe.config.release"
-                                   OutputFile="$(MSBuildThisFileDirectory)zeroc.ice.net\tools\net45\iceboxnet.exe.config"
-                                   Tokens="@PublicKeyToken@;@AssemblyDir@"
-                                   Replacements="$(PublicKeyToken);..\..\lib\net45"
-                                   Condition="'$(PublicKeyToken)' != ''"/>
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)iceboxnet.exe.config.dev"
-              DestinationFiles="$(MSBuildThisFileDirectory)zeroc.ice.net\tools\net45\iceboxnet.exe.config"
-              Condition="'$(PublicKeyToken)' == ''"/>
-
-        <!-- Copy bzip2 native dll next to iceboxnet assemblies -->
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.dll;
-                           $(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.pdb"
-              DestinationFolder="$(MSBuildThisFileDirectory)zeroc.ice.net\tools\net6.0"
-              Condition="'$(NetStandardTargets)' == 'true'"/>
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.dll;
-                           $(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.pdb"
-              DestinationFolder="$(MSBuildThisFileDirectory)zeroc.ice.net\tools\net7.0"
-              Condition="'$(NetStandardTargets)' == 'true'"/>
-
-        <Copy SourceFiles="$(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.dll;
-                           $(MSBuildThisFileDirectory)..\..\cpp\msbuild\packages\bzip2.v140.1.0.6.10\build\native\bin\x64\MT-Release\bzip2.pdb"
-              DestinationFolder="$(MSBuildThisFileDirectory)zeroc.ice.net\tools\net45"/>
-
-        <Copy SourceFiles="zeroc.ice.net.props"
-              DestinationFiles="zeroc.ice.net\build\zeroc.ice.net.props"/>
-
-        <Exec Command="$(NuGetExe) pack -NoPackageAnalysis -NonInteractive"
-              WorkingDirectory="zeroc.ice.net"/>
-    </Target>
-
-    <Target Name="UnixNuGetPack" DependsOnTargets="BuildDist" Condition="'$(OS)' != 'Windows_NT'">
-        <RemoveDir Directories="zeroc.ice.net" />
-        <MSBuild Projects="$(MSBuildThisFileDirectory)..\src\IceBox\msbuild\icebox\netstandard2.0\icebox.csproj"
-                 Properties="Configuration=$(Configuration);Platform=Any CPU"
-                 Targets="Publish"/>
-        <MSBuild Projects="zeroc.ice.net.csproj" Targets="Restore;Pack"/>
-        <RemoveDir Directories="obj"/>
-        <Delete Files="zeroc.ice.net\zeroc.ice.net.deps.json;zeroc.ice.net\zeroc.ice.net.dll;zeroc.ice.net\zeroc.ice.net.pdb"/>
-    </Target>
-
-    <Target Name="NuGetPack"
-            DependsOnTargets="WindowsNuGetPack;UnixNuGetPack">
+        <!-- Restore and Pack using MSBuild (cross-platform) -->
+        <MSBuild Projects="$(MSBuildThisFileDirectory)zeroc.ice.net.csproj"
+                 Properties="Configuration=$(Configuration)"
+                 Targets="Restore"/>
+        <MSBuild Projects="$(MSBuildThisFileDirectory)zeroc.ice.net.csproj"
+                 Properties="Configuration=$(Configuration);PackageOutputPath=$(PackageOutputPath);NoBuild=true"
+                 Targets="Pack"/>
     </Target>
 </Project>

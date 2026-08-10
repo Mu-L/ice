@@ -2,7 +2,7 @@
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
 
   <PropertyGroup>
-    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
   </PropertyGroup>
 
@@ -14,60 +14,30 @@
 
   <ItemGroup>
     <Projects Include="$(MSBuildThisFileDirectory)cpp\msbuild\ice.proj">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+        <Targets>BuildCpp98</Targets>
     </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)csharp\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' != 'v100'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+    <Projects Include="$(MSBuildThisFileDirectory)csharp\msbuild\ice.proj">
+        <Targets>Build</Targets>
     </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)java\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' != 'v100'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+    <Projects Include="$(MSBuildThisFileDirectory)java\msbuild\ice.proj">
+        <Targets>Build</Targets>
     </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)java-compat\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' != 'v100'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+    <Projects Include="$(MSBuildThisFileDirectory)java-compat\msbuild\ice.proj">
+        <Targets>Build</Targets>
     </Projects>
-
-    <!-- For PHP build both thread safe and non thread safe configurations -->
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v140'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration);BuildWithPhpVersion=7.1</Properties>
-    </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v140'">
-      <Properties>Platform=$(Platform);Configuration=NTS-$(Configuration);BuildWithPHPVersion=7.1</Properties>
-    </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v141'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration);BuildWithPhpVersion=7.2</Properties>
-    </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v141'">
-      <Properties>Platform=$(Platform);Configuration=NTS-$(Configuration);BuildWithPHPVersion=7.2</Properties>
-    </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v142'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration);BuildWithPhpVersion=8.0</Properties>
-    </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)php\msbuild\ice.proj" Condition="'$(DefaultPlatformToolset)' == 'v142'">
-      <Properties>Platform=$(Platform);Configuration=NTS-$(Configuration);BuildWithPHPVersion=8.0</Properties>
-    </Projects>
-
     <Projects Include="$(MSBuildThisFileDirectory)js\msbuild\ice.proj">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+        <Targets>Build</Targets>
     </Projects>
-
-    <Projects Include="$(MSBuildThisFileDirectory)python\msbuild\ice.proj"
-              Condition="'$(DefaultPlatformToolset)' == 'v140' or '$(DefaultPlatformToolset)' == 'v141' or '$(DefaultPlatformToolset)' == 'v142' or '$(DefaultPlatformToolset)' == 'v143'">
-      <Properties>Platform=$(Platform);Configuration=$(Configuration)</Properties>
+    <Projects Include="$(MSBuildThisFileDirectory)python\msbuild\ice.proj">
+        <Targets>Build</Targets>
     </Projects>
   </ItemGroup>
 
   <Target Name="Build">
     <MSBuild Projects="@(Projects)"
-             BuildInParallel="false"
-             Properties="%(Properties)" />
+             BuildInParallel="true"
+             Properties="Platform=$(Platform);Configuration=$(Configuration)"
+             Targets="%(Targets)" />
   </Target>
 
   <Target Name="Clean">

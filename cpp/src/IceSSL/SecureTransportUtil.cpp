@@ -365,7 +365,7 @@ loadPrivateKey(const string& file, SecCertificateRef cert, SecKeychainRef keycha
     for(CFIndex i = 0; i < count; ++i)
     {
         SecKeychainItemRef itemRef =
-            static_cast<SecKeychainItemRef>(const_cast<void*>(CFArrayGetValueAtIndex(items.get(), 0)));
+            static_cast<SecKeychainItemRef>(const_cast<void*>(CFArrayGetValueAtIndex(items.get(), i)));
         if(SecKeyGetTypeID() == CFGetTypeID(itemRef))
         {
             key.retain(reinterpret_cast<SecKeyRef>(itemRef));
@@ -402,7 +402,7 @@ loadPrivateKey(const string& file, SecCertificateRef cert, SecKeychainRef keycha
     item.retain(static_cast<SecCertificateRef>(const_cast<void*>(CFArrayGetValueAtIndex(added.get(), 0))));
 
     //
-    // Create the association between the private  key and the certificate,
+    // Create the association between the private key and the certificate,
     // kSecKeyLabel attribute should match the subject key identifier.
     //
     vector<SecKeychainAttribute> attributes;

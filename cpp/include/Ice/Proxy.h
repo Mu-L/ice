@@ -187,7 +187,7 @@ public:
             {
                 if(this->_is.b.empty())
                 {
-                    response(R { ok, { 0, 0 }});
+                    response(R { ok, { static_cast<Ice::Byte*>(nullptr), static_cast<Ice::Byte*>(nullptr) } });
                 }
                 else
                 {
@@ -211,7 +211,7 @@ public:
         {
             if(this->_is.b.empty())
             {
-                this->_promise.set_value(R { ok, { 0, 0 }});
+                this->_promise.set_value(R { ok, { static_cast<Ice::Byte*>(nullptr), static_cast<Ice::Byte*>(nullptr) } });
             }
             else
             {
@@ -224,7 +224,7 @@ public:
     {
         if(done)
         {
-            this->_promise.set_value(R { true, { 0, 0 }});
+            this->_promise.set_value(R { true, { static_cast<Ice::Byte*>(nullptr), static_cast<Ice::Byte*>(nullptr) } });
         }
         return false;
     }
@@ -363,8 +363,8 @@ public:
                  ::std::function<void(bool)> sent = nullptr,
                  const ::Ice::Context& context = ::Ice::noExplicitContext)
     {
-        return _makeLamdaOutgoing<bool>(std::move(response), std::move(ex), std::move(sent), this,
-                                        &ObjectPrx::_iceI_isA, typeId, context);
+        return _makeLambdaOutgoing<bool>(std::move(response), std::move(ex), std::move(sent), this,
+                                         &ObjectPrx::_iceI_isA, typeId, context);
     }
 
     /**
@@ -409,8 +409,8 @@ public:
                   ::std::function<void(bool)> sent = nullptr,
                   const ::Ice::Context& context = ::Ice::noExplicitContext)
     {
-        return _makeLamdaOutgoing<void>(std::move(response), std::move(ex), std::move(sent), this,
-                                        &ObjectPrx::_iceI_ping, context);
+        return _makeLambdaOutgoing<void>(std::move(response), std::move(ex), std::move(sent), this,
+                                         &ObjectPrx::_iceI_ping, context);
     }
 
     /**
@@ -456,8 +456,8 @@ public:
                  ::std::function<void(bool)> sent = nullptr,
                  const ::Ice::Context& context = ::Ice::noExplicitContext)
     {
-        return _makeLamdaOutgoing<::std::vector<::std::string>>(std::move(response), std::move(ex), std::move(sent),
-                                                                this, &ObjectPrx::_iceI_ids, context);
+        return _makeLambdaOutgoing<::std::vector<::std::string>>(std::move(response), std::move(ex), std::move(sent),
+                                                                 this, &ObjectPrx::_iceI_ids, context);
     }
 
     /**
@@ -502,8 +502,8 @@ public:
                 ::std::function<void(bool)> sent = nullptr,
                 const ::Ice::Context& context = ::Ice::noExplicitContext)
     {
-        return _makeLamdaOutgoing<::std::string>(std::move(response), std::move(ex), std::move(sent), this,
-                                                 &ObjectPrx::_iceI_id, context);
+        return _makeLambdaOutgoing<::std::string>(std::move(response), std::move(ex), std::move(sent), this,
+                                                  &ObjectPrx::_iceI_id, context);
     }
 
     /**
@@ -1147,7 +1147,7 @@ protected:
     }
 
     template<typename R, typename Re, typename E, typename S, typename Obj, typename Fn, typename... Args>
-    ::std::function<void()> _makeLamdaOutgoing(Re r, E e, S s, Obj obj, Fn fn, Args&&... args)
+    ::std::function<void()> _makeLambdaOutgoing(Re r, E e, S s, Obj obj, Fn fn, Args&&... args)
     {
         auto outAsync = ::std::make_shared<::IceInternal::LambdaOutgoing<R>>(shared_from_this(),
                                                                              std::move(r), std::move(e), std::move(s));
@@ -1472,12 +1472,16 @@ ICE_API bool proxyIdentityAndFacetLess(const ::std::shared_ptr<ObjectPrx>& lhs,
 ICE_API bool proxyIdentityAndFacetEqual(const ::std::shared_ptr<ObjectPrx>& lhs,
                                         const ::std::shared_ptr<ObjectPrx>& rhs);
 
+#ifdef __clang__
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wdeprecated-declarations" // for std::binary_function below
+#endif
+
 /**
  * A functor that compares the object identities of two proxies. Evaluates true if the identity in lhs
  * compares less than the identity in rhs, false otherwise.
  * \headerfile Ice/Ice.h
  */
-
 struct ProxyIdentityLess
 #if (ICE_CPLUSPLUS < 201703L)
     : std::binary_function<bool, ::std::shared_ptr<ObjectPrx>&, ::std::shared_ptr<ObjectPrx>&>
@@ -1536,6 +1540,10 @@ struct ProxyIdentityAndFacetEqual
         return proxyIdentityAndFacetEqual(lhs, rhs);
     }
 };
+
+#ifdef __clang__
+#   pragma clang diagnostic pop
+#endif
 
 /**
  * Downcasts a proxy without confirming the target object's type via a remote invocation.
@@ -3160,6 +3168,11 @@ ICE_API bool proxyIdentityAndFacetLess(const ObjectPrx& lhs, const ObjectPrx& rh
  */
 ICE_API bool proxyIdentityAndFacetEqual(const ObjectPrx& lhs, const ObjectPrx& rhs);
 
+#ifdef __clang__
+#   pragma clang diagnostic push
+#   pragma clang diagnostic ignored "-Wdeprecated-declarations" // for std::binary_function below
+#endif
+
 /**
  * A functor that compares the object identities of two proxies. Evaluates true if the identity in lhs
  * compares less than the identity in rhs, false otherwise.
@@ -3223,6 +3236,10 @@ struct ProxyIdentityAndFacetEqual
         return proxyIdentityAndFacetEqual(lhs, rhs);
     }
 };
+
+#ifdef __clang__
+#   pragma clang diagnostic pop
+#endif
 
 }
 

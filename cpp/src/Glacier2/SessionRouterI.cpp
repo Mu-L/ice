@@ -853,10 +853,22 @@ SessionRouterI::createSessionFromSecureConnection_async(
             return;
         }
         Ice::IPConnectionInfoPtr ipInfo = getIPConnectionInfo(info);
-        sslinfo.remotePort = ipInfo->remotePort;
-        sslinfo.remoteHost = ipInfo->remoteAddress;
-        sslinfo.localPort = ipInfo->localPort;
-        sslinfo.localHost = ipInfo->localAddress;
+        if(ipInfo)
+        {
+            sslinfo.remotePort = ipInfo->remotePort;
+            sslinfo.remoteHost = ipInfo->remoteAddress;
+            sslinfo.localPort = ipInfo->localPort;
+            sslinfo.localHost = ipInfo->localAddress;
+        }
+        else
+        {
+            //
+            // Not an IP connection, for example, a Bluetooth connection.
+            //
+            sslinfo.remotePort = 0;
+            sslinfo.localPort = 0;
+            // the hosts remain empty
+        }
         sslinfo.cipher = info->cipher;
         for(std::vector<IceSSL::CertificatePtr>::const_iterator i = info->certs.begin(); i != info->certs.end(); ++i)
         {
@@ -865,6 +877,16 @@ SessionRouterI::createSessionFromSecureConnection_async(
         if(info->certs.size() > 0)
         {
             userDN = info->certs[0]->getSubjectDN();
+            if(userDN.empty())
+            {
+                amdCB->ice_exception(PermissionDeniedException("empty user DN"));
+                return;
+            }
+        }
+        else
+        {
+            amdCB->ice_exception(PermissionDeniedException("the client did not provide a certificate"));
+            return;
         }
     }
     catch(const IceSSL::CertificateEncodingException&)

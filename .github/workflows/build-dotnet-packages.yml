@@ -1,0 +1,185 @@
+name: "Build .NET Packages"
+
+on:
+  workflow_call:
+    inputs:
+      ice_version:
+        required: false
+        type: string
+      authenticode_sign:
+        description: "Whether to Authenticode sign Windows binaries"
+        required: false
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      ice_version:
+        description: "The Ice version to build"
+        required: false
+      authenticode_sign:
+        description: "Whether to Authenticode sign Windows binaries"
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  build-slice-compilers:
+    strategy:
+      matrix:
+        include:
+          - os: macos-26
+            target: macos-arm64
+            artifact-path: cpp/bin/slice2cs
+          - os: windows-2022
+            target: windows-x64
+            artifact-path: cpp/bin/x64/Release/slice2cs.*
+          - os: ubuntu-24.04
+            target: linux-x64
+            artifact-path: cpp/bin/slice2cs
+          - os: ubuntu-24.04-arm
+            target: linux-arm64
+            artifact-path: cpp/bin/slice2cs
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Setup C++
+        uses: ./.github/actions/setup-cpp
+
+      - name: Build Compiler
+        uses: ./.github/actions/build-slice-compiler
+        with:
+          compiler_name: slice2cs
+          authenticode_sign: ${{ inputs.authenticode_sign }}
+        env:
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+
+      - name: Upload Compiler Artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: slice2cs-${{ matrix.target }}
+          path: ${{ matrix.artifact-path }}
+
+  pack-dotnet:
+    runs-on: windows-2022
+    needs: build-slice-compilers
+    env:
+      SLICE2CS_STAGING_PATH: ${{ github.workspace }}/staging
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Download All slice2cs Compiler Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+          pattern: slice2cs-*
+
+      - name: Copy slice2cs binaries to staging path
+        run: |
+          # Create the staging path.
+          mkdir -p "$SLICE2CS_STAGING_PATH/macos-arm64" \
+                   "$SLICE2CS_STAGING_PATH/linux-x64" \
+                   "$SLICE2CS_STAGING_PATH/linux-arm64" \
+                   "$SLICE2CS_STAGING_PATH/windows-x64"
+
+          # Copy the slice2cs binaries to the staging path.
+          cp -v artifacts/slice2cs-macos-arm64/slice2cs "$SLICE2CS_STAGING_PATH/macos-arm64/"
+          chmod +x $SLICE2CS_STAGING_PATH/macos-arm64/slice2cs
+          cp -v artifacts/slice2cs-linux-x64/slice2cs "$SLICE2CS_STAGING_PATH/linux-x64/"
+          chmod +x $SLICE2CS_STAGING_PATH/linux-x64/slice2cs
+          cp -v artifacts/slice2cs-linux-arm64/slice2cs "$SLICE2CS_STAGING_PATH/linux-arm64/"
+          chmod +x $SLICE2CS_STAGING_PATH/linux-arm64/slice2cs
+          cp -v artifacts/slice2cs-windows-x64/slice2cs.exe "$SLICE2CS_STAGING_PATH/windows-x64/"
+
+          # Copy slice2cs Windows binary to the default location for using it in package builds.
+          mkdir -p cpp/bin/x64/Release
+          cp -v artifacts/slice2cs-windows-x64/slice2cs.exe cpp/bin/x64/Release/
+
+        shell: bash
+
+      - name: Setup C++
+        uses: ./.github/actions/setup-cpp
+
+      - name: Setup Strong Name Signing Keys
+        shell: pwsh
+        env:
+          ICE_SNK_PUBLIC_KEY: ${{ secrets.ICE_SNK_PUBLIC_KEY }}
+          ICE_SNK_KEY: ${{ secrets.ICE_SNK_KEY }}
+        run: |
+          # Decode base64-encoded keys from secrets and save to files (only if secrets are set)
+          if ($env:ICE_SNK_PUBLIC_KEY -and $env:ICE_SNK_KEY) {
+            Write-Host "Setting up strong name signing keys..."
+
+            $publicKeyBytes = [System.Convert]::FromBase64String($env:ICE_SNK_PUBLIC_KEY)
+            [System.IO.File]::WriteAllBytes("${{ github.workspace }}\csharp\msbuild\ice-release-pub-key.snk", $publicKeyBytes)
+
+            $keyBytes = [System.Convert]::FromBase64String($env:ICE_SNK_KEY)
+            [System.IO.File]::WriteAllBytes("${{ github.workspace }}\csharp\msbuild\ice-release-key.snk", $keyBytes)
+
+            # Set environment variables for the build
+            echo "PUBLIC_KEYFILE=${{ github.workspace }}\csharp\msbuild\ice-release-pub-key.snk" >> $env:GITHUB_ENV
+            echo "KEYFILE=${{ github.workspace }}\csharp\msbuild\ice-release-key.snk" >> $env:GITHUB_ENV
+
+            # Add the .NET Framework SDK tools directory to PATH for sn.exe (strong name tool)
+            $sdkToolsPath = "${env:ProgramFiles(x86)}\Microsoft SDKs\Windows\v10.0A\bin\NETFX 4.8.1 Tools"
+            if (Test-Path $sdkToolsPath) {
+              Write-Host "Adding $sdkToolsPath to PATH"
+              echo $sdkToolsPath >> $env:GITHUB_PATH
+            } else {
+              Write-Host "Warning: .NET Framework SDK tools path not found at $sdkToolsPath"
+            }
+          } else {
+            Write-Host "Strong name signing keys not configured - assemblies will not be signed"
+          }
+
+      - name: Build .NET
+        run: dotnet msbuild csharp\msbuild\ice.proj /t:BuildDist /p:Configuration=Release /p:Platform=x64
+
+      - name: Collect Files to Sign
+        if: ${{ inputs.authenticode_sign }}
+        shell: pwsh
+        run: |
+          $root = "${{ github.workspace }}"
+
+          Get-ChildItem -Path "$root\csharp\lib", "$root\csharp\bin" `
+            -Recurse `
+            -Include *.dll,*.exe `
+            -File | `
+          ForEach-Object { $_.FullName.Substring($root.Length + 1) } | `
+          Sort-Object -Unique |
+          Set-Content -Path "$root\catalog.txt" -Encoding UTF8
+
+      - name: Sign .NET Assemblies with Trusted Signing
+        if: ${{ inputs.authenticode_sign }}
+        uses: azure/trusted-signing-action@c7ab2a863ab5f9a846ddb8265964877ef296ee82 # v2.0.0
+        with:
+          azure-tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          azure-client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          azure-client-secret: ${{ secrets.AZURE_CLIENT_SECRET }}
+          endpoint: https://eus.codesigning.azure.net/
+          signing-account-name: zeroc
+          certificate-profile-name: zeroc-ice
+          files-catalog: ${{ github.workspace }}\catalog.txt
+          file-digest: SHA256
+          timestamp-rfc3161: http://timestamp.acs.microsoft.com
+          timestamp-digest: SHA256
+
+      - name: Pack .NET Packages
+        run: >-
+          dotnet msbuild csharp\msbuild\ice.proj /t:NuGetPack /p:Configuration=Release /p:Platform=x64
+          ${{ inputs.ice_version && format('/p:PackageVersion={0}', inputs.ice_version) || '' }}
+
+      - name: Upload NuGet Packages
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: dotnet-nuget-packages
+          path: |
+            csharp/msbuild/*.nupkg
+            csharp/msbuild/*.snupkg

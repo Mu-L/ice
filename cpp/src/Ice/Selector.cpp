@@ -698,7 +698,10 @@ Selector::select(int timeout)
     }
     else if(timeout > 0)
     {
-        timeout = timeout * 1000;
+// kpoll and select use seconds, epoll and poll use milliseconds
+#if !defined(ICE_USE_KQUEUE) && !defined(ICE_USE_SELECT)
+         timeout = timeout * 1000;
+#endif
     }
     else
     {
@@ -1453,10 +1456,17 @@ Selector::select(int timeout)
         {
             if(timeout > 0)
             {
-                if(!timedWait(IceUtil::Time::seconds(timeout)))
+                bool timedOut = !timedWait(IceUtil::Time::seconds(timeout));
+                if(_readyHandlers.empty())
                 {
-                    break;
+                    if(timedOut)
+                    {
+                        throw SelectorTimeoutException(); // Actual timeout
+                    }
+                    // Signaled but no ready handlers - spurious wakeup, continue waiting
+                    continue;
                 }
+                break; // Ready handlers
             }
             else
             {

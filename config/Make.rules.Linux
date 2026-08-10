@@ -35,19 +35,28 @@ else ifneq ($(and $(filter centos rhel fedora,$(linux_id)),$(filter x86_64 i%86,
 supported-platforms     = x64 x86
 multilib-platform       = yes
 
+# We filter out -m32, -m64, because Slice compilers are always build as 64bit executables, and we set
+# the correct value for each arch build below. We also filter out -march setting to ensure our x86 builds
+# target x86-64 capable processor.
+
 ifeq ($(OPTIMIZE),yes)
 # Use default system packaging flags if building with OPTIMIZE and CXXFLAGS/LDFLAGS aren't defined.
-# NOTE: We remove the -m32/-m64 flags since we'll add them below.
-opt-cppflags = $(if $(CXXFLAGS),,$(filter-out -m32 -m64,$(shell setarch $1 rpm --eval %optflags)))
+opt-cppflags = $(if $(CXXFLAGS),,$(filter-out -m32 -m64 -march=%,$(shell setarch $1 rpm --eval %optflags)))
 opt-ldflags  = $(if $(LDFLAGS),,$(shell setarch $1 rpm --eval %?__global_ldflags))
 endif
 
-x64_cppflags            := $(call opt-cppflags,x86_64) -m64
+CXXFLAGS                := $(filter-out -m32 -m64 -march=%, $(CXXFLAGS))
+LDFLAGS                 := $(filter-out -m32 -m64, $(LDFLAGS))
+
+# Targeting x86-64-v2, compatible with most x86-64 processors. This matches the defaults in RHEL 9 x86-64 builds.
+# https://developers.redhat.com/blog/2021/01/05/building-red-hat-enterprise-linux-9-for-the-x86-64-v2-microarchitecture-level
+
+x64_cppflags            := $(call opt-cppflags,x86_64) -m64 -march=x86-64-v2
 x64_ldflags             := $(call opt-ldflags,x86_64) -m64
 x64_targetdir           = $(if $(filter %/build,$5),/x64,$(if $(filter-out $($1_target),program),64))
 x64_installdir          = $(if $(and $(filter-out $($1_target),program),$(if $5,$(filter-out %64,$5),true)),64)
 
-x86_cppflags            := $(call opt-cppflags,i386) -m32
+x86_cppflags            := $(call opt-cppflags,i386) -m32 -march=x86-64-v2
 x86_ldflags             := $(call opt-ldflags,i386) -m32
 x86_targetdir           = $(if $(filter %/build,$5),/x86)
 x86_targetname          = $(if $(is-bin-program),32)
@@ -137,7 +146,21 @@ shared_ldflags      = $(if $(filter-out program,$($1_target)),\
         -pie $(if $(filter yes,$(new_dtags)),-Wl$(comma)--enable-new-dtags,-Wl$(comma)--disable-new-dtags) \
         $$(call unique,$$(foreach d,$($4_dependencies),$$(call make-rpath-link-ldflags,$$d,$($4_dependencies)))))
 
-cppflags        = -Wall -Wextra -Wredundant-decls -Wshadow -Wdeprecated -Werror -pthread $(if $(filter yes,$(OPTIMIZE)),-DNDEBUG,-g)
+# We use the same obj/pie directory as the shared build since all the flags are the same.
+static_cppflags = -fPIE
+static_objdir   = obj/pie
+static_ldflags  = -pie
+
+# Link the Slice compilers without any shared libraries.
+# On Amazon Linux 2023, disable static linking since libmcpp-devel provides only the shared library.
+ifeq ($(filter amzn,$(linux_id)),)
+fully_static_ldflags = -static
+endif
+
+cppflags        = -Wall -Wextra -Wredundant-decls -Wshadow -Wdeprecated \
+                  $(if $(filter yes,$(WARNINGS_AS_ERRORS)),-Werror,) \
+                  -pthread \
+                  $(if $(filter yes,$(OPTIMIZE)),-DNDEBUG,-g)
 ldflags         = -pthread
 
 # -Wshadow is too strict with gcc 4
@@ -179,11 +202,23 @@ endif
 endif
 
 IceUtil_system_libs                             = -lrt $(if $(filter yes,$(libbacktrace)),-lbacktrace)
+
+#
+# Support for linking with MATLAB's bundled OpenSSL libraries.
+# Set USE_MATLAB_SSL=yes and MATLAB_HOME to link against MATLAB's OpenSSL.
+#
+ifeq ($(USE_MATLAB_SSL),yes)
+matlab_ssl_ldflags                              = -L$(MATLAB_HOME)/bin/glnxa64 -Wl,-rpath,$(MATLAB_HOME)/bin/glnxa64
+Ice_system_libs                                 = -ldl $(matlab_ssl_ldflags) -lmwcrypto $(IceUtil_system_libs)
+IceSSL_system_libs                              = $(matlab_ssl_ldflags) -lmwssl -lmwcrypto
+else
 Ice_system_libs                                 = -ldl -lcrypto $(IceUtil_system_libs)
+IceSSL_system_libs                              = -lssl -lcrypto
+endif
+
 ifeq ($(shell pkg-config --exists libsystemd 2> /dev/null && echo yes),yes)
 Ice_system_libs                                 += $(shell pkg-config --libs libsystemd)
 endif
-IceSSL_system_libs                              = -lssl -lcrypto
 Glacier2CryptPermissionsVerifier_system_libs    = -lcrypt
 
 icegridadmin_system_libs                        = -ledit

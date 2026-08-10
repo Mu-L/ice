@@ -94,7 +94,7 @@ public:
     //
     // wait atomically unlocks the mutex and waits for the condition
     // variable to be signaled for up to the given timeout. Before
-    // returning to the calling thread the mutex is reaquired. Returns
+    // returning to the calling thread the mutex is reacquired. Returns
     // true if the condition variable was signaled, false on a
     // timeout.
     //
@@ -282,7 +282,7 @@ Cond::timedWaitImpl(const M& mutex, const Time& timeout) const
 #   ifdef __APPLE__
     //
     // The monotonic time is based on mach_absolute_time and pthread
-    // condition variables require time from gettimeofday  so we get
+    // condition variables require time from gettimeofday so we get
     // the realtime time.
     //
     timeval tv = Time::now(Time::Realtime) + timeout;

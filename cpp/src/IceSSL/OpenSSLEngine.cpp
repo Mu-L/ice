@@ -105,24 +105,22 @@ IceSSL_opensslPasswordCallback(char* buf, int size, int flag, void* userData)
     OpenSSL::SSLEngine* p = reinterpret_cast<OpenSSL::SSLEngine*>(userData);
     assert(p);
     string passwd = p->password(flag == 1);
-    int sz = static_cast<int>(passwd.size());
-    if(sz > size)
-    {
-        sz = size - 1;
-    }
+
+    // Follow the OpenSSL documentation example: copy the password into the buffer, truncating if necessary, and
+    // null-terminate. See https://docs.openssl.org/3.0/man3/SSL_CTX_set_default_passwd_cb/#examples
 #if defined(_WIN32)
-    strncpy_s(buf, size, passwd.c_str(), sz);
+    strncpy_s(buf, size, passwd.c_str(), _TRUNCATE);
 #else
-    strncpy(buf, passwd.c_str(), sz);
+    strncpy(buf, passwd.c_str(), static_cast<size_t>(size));
 #endif
-    buf[sz] = '\0';
+    buf[size - 1] = '\0';
 
     for(string::iterator i = passwd.begin(); i != passwd.end(); ++i)
     {
         *i = '\0';
     }
 
-    return sz;
+    return static_cast<int>(strlen(buf));
 }
 
 #ifndef OPENSSL_NO_DH
@@ -890,6 +888,15 @@ OpenSSL::SSLEngine::initialize()
         // Store a pointer to ourself for use in OpenSSL callbacks.
         //
         SSL_CTX_set_ex_data(_ctx, 0, this);
+
+#ifdef SSL_OP_NO_RENEGOTIATION
+        //
+        // Reject peer-initiated TLS renegotiation: it is a CPU-asymmetric denial-of-service primitive
+        // on TLS 1.2 and is removed entirely in TLS 1.3. This is applied to application-supplied
+        // contexts as well. SSL_OP_NO_RENEGOTIATION requires OpenSSL 1.1.0h or later.
+        //
+        SSL_CTX_set_options(_ctx, SSL_OP_NO_RENEGOTIATION);
+#endif
 
         //
         // This is necessary for successful interop with Java. Without it, a Java

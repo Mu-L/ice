@@ -278,7 +278,7 @@ public:
     {
     }
 
-    virtual string getPassword()
+    string getPassword()
     {
         ++_count;
         return _password;
@@ -308,7 +308,7 @@ public:
         reset();
     }
 
-    virtual bool
+    bool
     verify(const IceSSL::ConnectionInfoPtr& info)
     {
         if(info->certs.size() > 0)
@@ -398,8 +398,6 @@ private:
 };
 ICE_DEFINE_PTR(CertificateVerifierIPtr, CertificateVerifierI);
 
-int keychainN = 0;
-
 static PropertiesPtr
 createClientProps(const Ice::PropertiesPtr& defaultProps, bool p12)
 {
@@ -422,13 +420,6 @@ createClientProps(const Ice::PropertiesPtr& defaultProps, bool p12)
     }
     //result->setProperty("IceSSL.Trace.Security", "1");
     //result->setProperty("Ice.Trace.Network", "3");
-#ifdef ICE_USE_SECURE_TRANSPORT
-    ostringstream keychainName;
-    keychainName << "../certs/keychain/client" << keychainN++ << ".keychain";
-    const string keychainPassword = "password";
-    result->setProperty("IceSSL.Keychain", keychainName.str());
-    result->setProperty("IceSSL.KeychainPassword", keychainPassword);
-#endif
     return result;
 }
 
@@ -453,12 +444,6 @@ createServerProps(const Ice::PropertiesPtr& defaultProps, bool p12)
     }
     //result["Ice.Trace.Network"] = "3";
     //result["IceSSL.Trace.Security"] = "1";
-#ifdef ICE_USE_SECURE_TRANSPORT
-    ostringstream keychainName;
-    keychainName << "../certs/keychain/server" << keychainN << ".keychain";
-    result["IceSSL.Keychain"] = keychainName.str();
-    result["IceSSL.KeychainPassword"] = "password";
-#endif
     return result;
 }
 
@@ -560,9 +545,9 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
 
     string defaultHost = communicator->getProperties()->getProperty("Ice.Default.Host");
 #if !defined(__APPLE__) || TARGET_OS_IPHONE == 0
-    string defaultDir = testDir + "/../certs";
+    string defaultDir = testDir;
 #else
-    string defaultDir = "certs";
+    string defaultDir = "configuration";
 #endif
 
     Ice::PropertiesPtr defaultProps = communicator->getProperties()->clone();
@@ -1237,17 +1222,19 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
 
         const char* authorities[] =
         {
-            "", // Self signed CA cert has not X509v3 Authority Key Identifier extension
-            "02:FD:1B:E9:6F:4E:96:8F:0C:0E:99:61:8F:45:48:6B:2B:14:3C:31",
-            "02:FD:1B:E9:6F:4E:96:8F:0C:0E:99:61:8F:45:48:6B:2B:14:3C:31",
+            // The self-signed CA certificate's authority key identifier matches its subject key
+            // identifier.
+            "57:36:67:A0:76:BA:87:75:35:19:1A:70:8C:D2:FE:1D:74:F7:8B:DC",
+            "57:36:67:A0:76:BA:87:75:35:19:1A:70:8C:D2:FE:1D:74:F7:8B:DC",
+            "57:36:67:A0:76:BA:87:75:35:19:1A:70:8C:D2:FE:1D:74:F7:8B:DC",
             0
         };
 
         const char* subjects[] =
         {
-            "02:FD:1B:E9:6F:4E:96:8F:0C:0E:99:61:8F:45:48:6B:2B:14:3C:31",
-            "7F:4D:BF:80:65:E0:EE:A4:18:D5:6A:87:33:63:B3:76:7D:42:82:06",
-            "EB:4A:7A:79:09:65:0F:45:40:E8:8C:E6:A8:27:74:34:AB:EA:AF:48",
+            "57:36:67:A0:76:BA:87:75:35:19:1A:70:8C:D2:FE:1D:74:F7:8B:DC",
+            "E3:6D:D0:B7:A9:FA:66:70:52:55:01:86:A1:48:57:49:F0:03:5D:54",
+            "7A:C6:C0:D0:4C:DE:61:B1:FB:5C:3D:58:84:8F:74:CE:4B:8A:1B:5C",
             0
         };
 
@@ -1702,17 +1689,17 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             "30:03:01:01:FF";
 
         const string subjectKeyIdentifier =
-            "04:14:13:FA:72:67:FE:34:05:9A:C9:3E:61:D2:91:D6:BA:03:65:1B:8A:9A";
+            "04:14:19:C8:58:AD:66:1C:18:9E:C8:AF:B8:ED:60:75:EB:F2:08:71:DF:19";
 
         const string authorityKeyIdentifier =
-            "30:81:A2:80:14:13:FA:72:67:FE:34:05:9A:C9:3E:61:D2:91:D6:BA:03:65:"
-            "1B:8A:9A:A1:7F:A4:7D:30:7B:31:0B:30:09:06:03:55:04:06:13:02:55:53:"
+            "30:81:AD:80:14:19:C8:58:AD:66:1C:18:9E:C8:AF:B8:ED:60:75:EB:F2:08:"
+            "71:DF:19:A1:7F:A4:7D:30:7B:31:0B:30:09:06:03:55:04:06:13:02:55:53:"
             "31:10:30:0E:06:03:55:04:08:0C:07:46:6C:6F:72:69:64:61:31:10:30:0E:"
             "06:03:55:04:07:0C:07:4A:75:70:69:74:65:72:31:0E:30:0C:06:03:55:04:"
             "0A:0C:05:5A:65:72:6F:43:31:0C:30:0A:06:03:55:04:0B:0C:03:49:63:65:"
             "31:0B:30:09:06:03:55:04:03:0C:02:43:41:31:1D:30:1B:06:09:2A:86:48:"
             "86:F7:0D:01:09:01:16:0E:69:6E:66:6F:40:7A:65:72:6F:63:2E:63:6F:6D:"
-            "82:09:00:EA:2A:B7:FB:3B:A3:DF:5A";
+            "82:14:5A:1F:59:D3:39:20:7B:CD:BD:96:FA:6A:61:E5:20:23:7B:D2:4A:28";
 
         const string subjectAltName =
             "30:0B:82:09:7A:65:72:6F:63:2E:63:6F:6D";
@@ -1911,14 +1898,14 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             InitializationData initData;
             initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
             initData.properties->setProperty("IceSSL.VerifyPeer", "0");
-            initData.properties->setProperty("IceSSL.Protocols", "tls1_1");
+            initData.properties->setProperty("IceSSL.Protocols", "tls1_2");
             CommunicatorPtr comm = initialize(initData);
 
             Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
             test(fact);
             Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
             d["IceSSL.VerifyPeer"] = "0";
-            d["IceSSL.Protocols"] = "tls1_2";
+            d["IceSSL.Protocols"] = "tls1_3";
             Test::ServerPrxPtr server = fact->createServer(d);
             try
             {
@@ -1949,61 +1936,11 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             test(fact);
             d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
             d["IceSSL.VerifyPeer"] = "0";
-            d["IceSSL.Protocols"] = "tls1_1, tls1_2";
+            d["IceSSL.Protocols"] = "tls1_2, tls1_3";
             server = fact->createServer(d);
             try
             {
                 server->ice_ping();
-            }
-            catch(const LocalException& ex)
-            {
-                //
-                // OpenSSL < 1.0 doesn't support tls 1.1 so it will fail, we ignore the error in this case.
-                //
-#   ifdef ICE_USE_OPENSSL
-                if(openSSLVersion < 0x1000000)
-#   endif
-                {
-                    cerr << ex << endl;
-                    test(false);
-                }
-            }
-            fact->destroyServer(server);
-            comm->destroy();
-        }
-
-        //
-        // Skip the test if OpenSSL was build without SSL3 support
-        //
-#   if !defined(OPENSSL_NO_SSL3_METHOD) && defined(SSL3_VERSION)
-        //
-        // This should fail because the client only accept SSLv3 and the server
-        // use the default protocol set that disables SSLv3
-        //
-        {
-            InitializationData initData;
-            initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
-            initData.properties->setProperty("IceSSL.VerifyPeer", "0");
-            initData.properties->setProperty("IceSSL.Protocols", "ssl3");
-            CommunicatorPtr comm = initialize(initData);
-
-            Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
-            test(fact);
-            Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
-            d["IceSSL.VerifyPeer"] = "0";
-            Test::ServerPrxPtr server = fact->createServer(d);
-            try
-            {
-                server->ice_ping();
-                test(false);
-            }
-            catch(const ProtocolException&)
-            {
-                // Expected on some platforms.
-            }
-            catch(const ConnectionLostException&)
-            {
-                // Expected on some platforms.
             }
             catch(const LocalException& ex)
             {
@@ -2013,42 +1950,12 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             fact->destroyServer(server);
             comm->destroy();
         }
-#   endif
 
-        //
-        // SSLv3 is now disabled by default with some SSL implementations.
-        //
-        // //
-        // // This should success because both have SSLv3 enabled
-        // //
-        // {
-        //     InitializationData initData;
-        //     initData.properties = createClientProps(defaultProps, p12, "", "cacert1");
-        //     initData.properties->setProperty("IceSSL.Protocols", "ssl3");
-        //     CommunicatorPtr comm = initialize(initData);
-
-        //     Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
-        //     test(fact);
-        //     Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "");
-        //     d["IceSSL.VerifyPeer"] = "0";
-        //     d["IceSSL.Protocols"] = "ssl3, tls, tls1_1, tls1_2";
-        //     Test::ServerPrxPtr server = fact->createServer(d);
-        //     try
-        //     {
-        //         server->ice_ping();
-        //     }
-        //     catch(const LocalException& ex)
-        //     {
-        //         test(false);
-        //     }
-        //     fact->destroyServer(server);
-        //     comm->destroy();
-        // }
 #else
         //
         // In macOS we don't support IceSSL.Protocols as secure transport doesn't allow to set the enabled protocols
         // instead we use IceSSL.ProtocolVersionMax IceSSL.ProtocolVersionMin to set the maximun and minimum
-        // enabled protocol versions. See the test bellow.
+        // enabled protocol versions. See the test below.
         //
 
         {
@@ -2102,7 +2009,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             d["IceSSL.Ciphers"] = "(DH_anon*)";
             d["IceSSL.VerifyPeer"] = "0";
             d["IceSSL.ProtocolVersionMax"] = "tls1";
-            d["IceSSL.ProtocolVersionMin"] = "ssl3";
+            d["IceSSL.ProtocolVersionMin"] = "tls1";
             server = fact->createServer(d);
             try
             {
@@ -2111,74 +2018,6 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             catch(const LocalException& ex)
             {
                 cerr << ex << endl;
-                test(false);
-            }
-            fact->destroyServer(server);
-            comm->destroy();
-        }
-
-        //
-        // This should fail because the client only accept SSLv3 and the server
-        // use the default protocol set that disables SSLv3
-        //
-        {
-            InitializationData initData;
-            initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
-            initData.properties->setProperty("IceSSL.VerifyPeer", "0");
-            initData.properties->setProperty("IceSSL.ProtocolVersionMin", "ssl3");
-            initData.properties->setProperty("IceSSL.ProtocolVersionMax", "ssl3");
-            CommunicatorPtr comm = initialize(initData);
-
-            Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
-            test(fact);
-            Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
-            d["IceSSL.VerifyPeer"] = "0";
-            Test::ServerPrxPtr server = fact->createServer(d);
-            try
-            {
-                server->ice_ping();
-                test(false);
-            }
-            catch(const ProtocolException&)
-            {
-                // Expected on some platforms.
-            }
-            catch(const ConnectionLostException&)
-            {
-                // Expected on some platforms.
-            }
-            catch(const LocalException& ex)
-            {
-                cerr << ex << endl;
-                test(false);
-            }
-            fact->destroyServer(server);
-            comm->destroy();
-        }
-
-        //
-        // This should succeed because both have SSLv3 enabled
-        //
-        {
-            InitializationData initData;
-            initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
-            initData.properties->setProperty("IceSSL.VerifyPeer", "0");
-            initData.properties->setProperty("IceSSL.ProtocolVersionMin", "ssl3");
-            initData.properties->setProperty("IceSSL.ProtocolVersionMax", "ssl3");
-            CommunicatorPtr comm = initialize(initData);
-
-            Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
-            test(fact);
-            Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
-            d["IceSSL.VerifyPeer"] = "0";
-            d["IceSSL.ProtocolVersionMin"] = "ssl3";
-            Test::ServerPrxPtr server = fact->createServer(d);
-            try
-            {
-                server->ice_ping();
-            }
-            catch(const LocalException&)
-            {
                 test(false);
             }
             fact->destroyServer(server);
@@ -2621,25 +2460,25 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
 #else // SChannel ciphers
     {
         //
-        // Client and server should negotiate to use 3DES as it is enabled in both.
+        // Client and server should negotiate to use AES_128 as it is enabled in both.
         //
         InitializationData initData;
         initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
-        initData.properties->setProperty("IceSSL.Ciphers", "3DES");
+        initData.properties->setProperty("IceSSL.Ciphers", "AES_128");
 
         CommunicatorPtr comm = initialize(initData);
         Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
         test(fact);
 
         Test::Properties d = createServerProps(defaultProps, p12, "s_rsa_ca1", "cacert1");
-        d["IceSSL.Ciphers"] = "3DES AES_256";
+        d["IceSSL.Ciphers"] = "AES_128 AES_256";
 
         Test::ServerPrxPtr server = fact->createServer(d);
         try
         {
-            server->checkCipher("3DES");
+            server->checkCipher("AES_128");
             info = ICE_DYNAMIC_CAST(IceSSL::ConnectionInfo, server->ice_getConnection()->getInfo());
-            test(info->cipher.compare(0, 4, "3DES") == 0);
+            test(info->cipher.compare(0, 7, "AES_128") == 0);
         }
         catch(const LocalException& ex)
         {
@@ -2651,12 +2490,11 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
     }
     {
         //
-        // Client and server doesn't enable a common cipher negotiate to use 3DES as it is enabled in both.
+        // Client and server do not enable a common cipher (client: AES_128, server: AES_256); the connection should fail.
         //
         InitializationData initData;
         initData.properties = createClientProps(defaultProps, p12, "c_rsa_ca1", "cacert1");
-        initData.properties->setProperty("IceSSL.Ciphers", "3DES");
-
+        initData.properties->setProperty("IceSSL.Ciphers", "AES_128");
         CommunicatorPtr comm = initialize(initData);
         Test::ServerFactoryPrxPtr fact = ICE_CHECKED_CAST(Test::ServerFactoryPrx, comm->stringToProxy(factoryRef));
         test(fact);
@@ -2666,7 +2504,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
         Test::ServerPrxPtr server = fact->createServer(d);
         try
         {
-            server->checkCipher("3DES");
+            server->checkCipher("AES_128");
             test(false);
         }
         catch(const Ice::ConnectionLostException&)
@@ -2682,6 +2520,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
         comm->destroy();
     }
 #endif
+    cout << "ok" << endl;
 
     cout << "testing IceSSL.TrustOnly... " << flush;
     //
@@ -3500,8 +3339,8 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             "SUBJECTDN:'CN=Client, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US, E=info@zeroc.com'",
             "ISSUER:'ZeroC, Inc.' SUBJECT:Client SERIAL:02",
             "ISSUERDN:'CN=ZeroC Test CA 1, OU=Ice, O=\"ZeroC, Inc.\",L=Jupiter, S=Florida, C=US,E=info@zeroc.com' SUBJECT:Client",
-            "THUMBPRINT:'8B D3 64 6B 9E 80 AE 56 08 05 0F C8 DE 9B B0 4B CC FD 4D 9C'",
-            "SUBJECTKEYID:'7F 4D BF 80 65 E0 EE A4 18 D5 6A 87 33 63 B3 76 7D 42 82 06'",
+            "THUMBPRINT:'91 3E 4E BF A5 D3 8F 50 69 6F 72 9E 6F 26 23 BD F1 31 7D F0'",
+            "SUBJECTKEYID:'E3 6D D0 B7 A9 FA 66 70 52 55 01 86 A1 48 57 49 F0 03 5D 54'",
             0
         };
 
@@ -3510,8 +3349,8 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             "SUBJECTDN:'CN=Server, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US, E=info@zeroc.com'",
             "ISSUER:'ZeroC, Inc.' SUBJECT:Server SERIAL:01",
             "ISSUERDN:'CN=ZeroC Test CA 1, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US,E=info@zeroc.com' SUBJECT:Server",
-            "THUMBPRINT:'F2 EB 9D E7 A5 DB 32 2B AC 5B 4F 88 8F 5E 62 57 2E 2F 7B 8C'",
-            "SUBJECTKEYID:'EB 4A 7A 79 09 65 0F 45 40 E8 8C E6 A8 27 74 34 AB EA AF 48'",
+            "THUMBPRINT:'53 AA 97 73 59 BD 46 92 4F 78 79 A8 68 B9 15 82 40 60 2A DE'",
+            "SUBJECTKEYID:'7A C6 C0 D0 4C DE 61 B1 FB 5C 3D 58 84 8F 74 CE 4B 8A 1B 5C'",
             0
         };
 
@@ -3633,7 +3472,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
         {
 //            "SUBJECT:Client",
             "LABEL:'Client'",
-            "SUBJECTKEYID:'7F 4D BF 80 65 E0 EE A4 18 D5 6A 87 33 63 B3 76 7D 42 82 06'",
+            "SUBJECTKEYID:'E3 6D D0 B7 A9 FA 66 70 52 55 01 86 A1 48 57 49 F0 03 5D 54'",
             "SERIAL:02",
             "SERIAL:02 LABEL:Client",
             0
@@ -3646,7 +3485,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             "SUBJECT:Server",
 #endif
             "LABEL:'Server'",
-            "SUBJECTKEYID:'EB 4A 7A 79 09 65 0F 45 40 E8 8C E6 A8 27 74 34 AB EA AF 48'",
+            "SUBJECTKEYID:'7A C6 C0 D0 4C DE 61 B1 FB 5C 3D 58 84 8F 74 CE 4B 8A 1B 5C'",
             "SERIAL:01",
             "SERIAL:01 LABEL:Server",
             0
@@ -3676,7 +3515,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             InitializationData initData;
             initData.properties = createClientProps(defaultProps, p12);
             initData.properties->setProperty("IceSSL.CAs", "cacert1.pem");
-            initData.properties->setProperty("IceSSL.Keychain", "../certs/Find.keychain");
+            initData.properties->setProperty("IceSSL.Keychain", defaultDir + "/Find.keychain");
             initData.properties->setProperty("IceSSL.KeychainPassword", "password");
             initData.properties->setProperty("IceSSL.FindCert", clientFindCertProperties[i]);
             //
@@ -3690,7 +3529,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
             test(fact);
             Test::Properties d = createServerProps(defaultProps, p12);
             d["IceSSL.CAs"] = "cacert1.pem";
-            d["IceSSL.Keychain"] = "../certs/Find.keychain";
+            d["IceSSL.Keychain"] = defaultDir + "/Find.keychain";
             d["IceSSL.KeychainPassword"] = "password";
             d["IceSSL.FindCert"] = serverFindCertProperties[i];
 
@@ -3717,7 +3556,7 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
         {
             InitializationData initData;
             initData.properties = createClientProps(defaultProps, p12);
-            initData.properties->setProperty("IceSSL.Keychain", "../certs/Find.keychain");
+            initData.properties->setProperty("IceSSL.Keychain", defaultDir + "/Find.keychain");
             initData.properties->setProperty("IceSSL.KeychainPassword", "password");
             initData.properties->setProperty("IceSSL.FindCert", failFindCertProperties[i]);
             try
@@ -4024,106 +3863,6 @@ allTests(Test::TestHelper* helper, const string& /*testDir*/, bool p12)
         cout << "ok" << endl;
 #endif
     }
-
-#if !defined(_AIX) && !(defined(_WIN32) && defined(ICE_USE_OPENSSL))
-    //
-    // On AIX 6.1, the default root certificates don't validate demo.zeroc.com.
-    // On Windows with OpenSSL there aren't any system CAs.
-    //
-    cout << "testing system CAs... " << flush;
-    {
-        //
-        // Retry a few times in case there are connectivity problems with demo.zeroc.com.
-        //
-        const int retryMax = 5;
-        const int retryDelay = 1000;
-
-        {
-            int retryCount = 0;
-            InitializationData initData;
-            initData.properties = createClientProps(defaultProps, false);
-            initData.properties->setProperty("IceSSL.DefaultDir", "");
-            initData.properties->setProperty("IceSSL.VerifyDepthMax", "5");
-            initData.properties->setProperty("Ice.Override.Timeout", "5000"); // 5s timeout
-            CommunicatorPtr comm = initialize(initData);
-            Ice::ObjectPrxPtr p = comm->stringToProxy("Glacier2/router:wss -p 443 -h zeroc.com -r /demo-proxy/chat/glacier2");
-            while(true)
-            {
-                try
-                {
-                    p->ice_ping();
-                    test(false);
-                }
-                catch(const Ice::SecurityException&)
-                {
-                    // Expected, by default we don't check for system CAs.
-                    break;
-                }
-                catch(const Ice::LocalException& ex)
-                {
-                    if((dynamic_cast<const Ice::ConnectTimeoutException*>(&ex)) ||
-                       (dynamic_cast<const Ice::SocketException*>(&ex)) ||
-                       (dynamic_cast<const Ice::DNSException*>(&ex)))
-                    {
-                        if(++retryCount < retryMax)
-                        {
-                            cout << "retrying... " << flush;
-                            IceUtil::ThreadControl::sleep(IceUtil::Time::milliSeconds(retryDelay));
-                            continue;
-                        }
-                    }
-
-                    cerr << "warning: unable to connect to demo.zeroc.com to check system CA:\n" << ex << endl;
-                    break;
-                }
-            }
-            comm->destroy();
-        }
-
-        {
-            int retryCount = 0;
-            InitializationData initData;
-            initData.properties = createClientProps(defaultProps, false);
-            initData.properties->setProperty("IceSSL.DefaultDir", "");
-            initData.properties->setProperty("IceSSL.VerifyDepthMax", "5");
-            initData.properties->setProperty("Ice.Override.Timeout", "5000"); // 5s timeout
-            initData.properties->setProperty("IceSSL.UsePlatformCAs", "1");
-            CommunicatorPtr comm = initialize(initData);
-            Ice::ObjectPrxPtr p = comm->stringToProxy("Glacier2/router:wss -p 443 -h zeroc.com -r /demo-proxy/chat/glacier2");
-            while(true)
-            {
-                try
-                {
-                    Ice::WSConnectionInfoPtr wsinfo =
-                        ICE_DYNAMIC_CAST(Ice::WSConnectionInfo, p->ice_getConnection()->getInfo());
-                    IceSSL::ConnectionInfoPtr sslInfo = ICE_DYNAMIC_CAST(IceSSL::ConnectionInfo, wsinfo->underlying);
-                    test(sslInfo->verified);
-                    test(getHost(sslInfo) == "zeroc.com");
-                    break;
-                }
-                catch(const Ice::LocalException& ex)
-                {
-                    if((dynamic_cast<const Ice::ConnectTimeoutException*>(&ex)) ||
-                       (dynamic_cast<const Ice::SocketException*>(&ex)) ||
-                       (dynamic_cast<const Ice::DNSException*>(&ex)))
-                    {
-                        if(++retryCount < retryMax)
-                        {
-                            cout << "retrying... " << flush;
-                            IceUtil::ThreadControl::sleep(IceUtil::Time::milliSeconds(retryDelay));
-                            continue;
-                        }
-                    }
-
-                    cerr << "warning: unable to connect to demo.zeroc.com to check system CA:\n" << ex << endl;
-                    break;
-                }
-            }
-            comm->destroy();
-        }
-    }
-    cout << "ok" << endl;
-#endif
 
     return factory;
 }

@@ -92,7 +92,7 @@ class Component(object):
     or the mapping directory if using a source distribution.
     """
     def getInstallDir(self, mapping, current):
-        raise Error("must be overriden")
+        raise Error("must be overridden")
 
     def getSourceDir(self):
         return toplevel
@@ -108,7 +108,7 @@ class Component(object):
         return os.path.join(self.getSourceDir(), "scripts", "tests")
 
     def getPhpExtension(self, mapping, current):
-        raise RuntimeError("must be overriden if component provides php mapping")
+        raise RuntimeError("must be overridden if component provides php mapping")
 
     def getNugetPackage(self, mapping):
         return "zeroc.{0}.{1}".format(self.__class__.__name__.lower(),
@@ -131,7 +131,7 @@ class Component(object):
         return self.nugetVersion[mapping]
 
     def getNugetPackageVersionFile(self, mapping):
-        raise RuntimeError("must be overriden if component provides C++ or C# nuget packages")
+        raise RuntimeError("must be overridden if component provides C++ or C# nuget packages")
 
     def getFilters(self, mapping, config):
         return ([], [])
@@ -243,7 +243,7 @@ class Platform(object):
     def hasSwift(self, version):
         if self._hasSwift is None:
             try:
-                m = re.search("Apple Swift version ([0-9]+\.[0-9]+)", run("swift --version"))
+                m = re.search(r"Apple Swift version ([0-9]+\.[0-9]+)", run("swift --version"))
                 if m and m.group(1):
                     self._hasSwift = tuple([int(n) for n in m.group(1).split(".")]) >= version
                 else:
@@ -290,7 +290,7 @@ class Platform(object):
         return os.path.join(installDir, "lib")
 
     def getBuildSubDir(self, mapping, name, current):
-        # Return the build sub-directory, to be overriden by specializations
+        # Return the build sub-directory, to be overridden by specializations
         buildPlatform = current.driver.configs[mapping].buildPlatform
         buildConfig = current.driver.configs[mapping].buildConfig
         return os.path.join("build", buildPlatform, buildConfig)
@@ -417,13 +417,13 @@ class Windows(Platform):
         pass # Nothing to do, we don't support the make build system on Windows
 
     def getDefaultBuildPlatform(self):
-        return "x64" if "X64" in os.environ.get("PLATFORM", "") else "Win32"
+        return "Win32" if "Win32" in os.environ.get("PLATFORM", "") else "x64"
 
     def getDefaultBuildConfig(self):
         return "Release"
 
     def getCompiler(self):
-        if self.compiler != None:
+        if self.compiler is not None:
             return self.compiler
         if os.environ.get("CPP_COMPILER", "") != "":
             self.compiler = os.environ["CPP_COMPILER"]
@@ -446,8 +446,8 @@ class Windows(Platform):
                     self.compiler = "v143"
                 else:
                     raise RuntimeError("Unknown compiler version:\n{0}".format(out))
-            except:
-                self.compiler = ""
+            except Exception:
+                self.compiler = "v143"
         return self.compiler
 
     def getPlatformToolset(self):
@@ -621,7 +621,6 @@ class Mapping(object):
             # avoid having to check the configuration type)
             self.openssl = False
             self.browser = ""
-            self.es5 = False
             self.worker = False
             self.dotnet = False
             self.framework = ""
@@ -652,7 +651,15 @@ class Mapping(object):
                     return
 
                 supportedOptions = supportedOptions.copy()
-                supportedOptions.update(testcase.getMapping().getOptions(current))
+                mappingOptions = testcase.getMapping().getOptions(current)
+
+                # For cross tests, intersect with the server mapping options
+                if current.driver.cross:
+                    serverTestCase = testcase.getServerTestCase(current.driver.cross)
+                    if serverTestCase:
+                        self.intersectMappingOptions(mappingOptions, serverTestCase.getMapping().getOptions(current))
+
+                supportedOptions.update(mappingOptions)
                 supportedOptions.update(testcase.getTestSuite().getOptions(current))
                 supportedOptions.update(testcase.getOptions(current))
 
@@ -700,14 +707,41 @@ class Mapping(object):
 
             return [c for c in gen(current.driver.filterOptions(current.driver.getComponent().getOptions(testcase, current)))]
 
+        @staticmethod
+        def intersectMappingOptions(options, serverOptions):
+            """Intersect client mapping options with server mapping options for cross tests."""
+            for k, v in serverOptions.items():
+                if k in options:
+                    # Intersect the values - only keep values present in both
+                    options[k] = [x for x in options[k] if x in v]
+                else:
+                    # Server has a restriction that client doesn't - add it
+                    options[k] = v
+
+        def getMergedOptions(self, current):
+            """
+            Get test options merged from the testcase, testsuite, and mapping. When running cross
+            tests, options from both client and server mappings are intersected to ensure only
+            configurations supported by both are used.
+            """
+            options = {}
+            options.update(current.testcase.getMapping().getOptions(current))
+
+            # For cross tests, intersect with the server mapping options
+            if current.driver.cross:
+                serverTestCase = current.testcase.getServerTestCase(current.driver.cross)
+                if serverTestCase:
+                    self.intersectMappingOptions(options, serverTestCase.getMapping().getOptions(current))
+
+            options.update(current.testcase.getTestSuite().getOptions(current))
+            options.update(current.testcase.getOptions(current))
+            return options
+
         def canRun(self, testId, current):
             if not current.driver.getComponent().canRun(testId, current.testcase.getMapping(), current):
                 return False
 
-            options = {}
-            options.update(current.testcase.getMapping().getOptions(current))
-            options.update(current.testcase.getTestSuite().getOptions(current))
-            options.update(current.testcase.getOptions(current))
+            options = self.getMergedOptions(current)
 
             for (k, v) in options.items():
                 if hasattr(self, k):
@@ -723,10 +757,7 @@ class Mapping(object):
             #
             # Clone this configuration and make sure all the options are supported
             #
-            options = {}
-            options.update(current.testcase.getMapping().getOptions(current))
-            options.update(current.testcase.getTestSuite().getOptions(current))
-            options.update(current.testcase.getOptions(current))
+            options = self.getMergedOptions(current)
 
             clone = copy.copy(self)
             for o in self.parsedOptions:
@@ -1547,7 +1578,7 @@ class TestCase(Runnable):
         return self.options(current) if callable(self.options) else self.options
 
     def canRun(self, current):
-        # Can be overriden
+        # Can be overridden
         return True
 
     def setupServerSide(self, current):
@@ -2053,8 +2084,11 @@ class LocalProcessController(ProcessController):
 
         def teardown(self, current, success):
             if self.traceFile:
-                if success or current.driver.isInterrupted():
-                    os.remove(self.traceFile)
+                if not current.driver.keepLogs and (success or current.driver.isInterrupted()):
+                    try:
+                        os.remove(self.traceFile)
+                    except FileNotFoundError:
+                        pass
                 else:
                     current.writeln("saved {0}".format(self.traceFile))
 
@@ -2072,6 +2106,7 @@ class LocalProcessController(ProcessController):
             "testcase": current.testcase,
             "testdir": current.testsuite.getPath(),
             "builddir": current.getBuildDir(process.getExe(current)),
+            "certsdir": os.path.join(toplevel, "certs", "configuration"),
         }
 
         traceFile = ""
@@ -2108,7 +2143,13 @@ class LocalProcessController(ProcessController):
                 current.writeln("({0})".format(cmd))
 
         env = os.environ.copy()
-        env.update(envs)
+        for k, v in envs.items():
+            # Prepend to existing LD_LIBRARY_PATH / DYLD_LIBRARY_PATH / PATH to ensure that our libraries
+            # are found first but we can still pick up system libraries and executables.
+            if k == platform.getLdPathEnvName() and k in env:
+                env[k] = v + os.pathsep + env[k]
+            else:
+                env[k] = v
         mapping = process.getMapping(current)
         cwd = mapping.getTestCwd(process, current)
         process = LocalProcessController.LocalProcess(command=cmd,
@@ -2434,7 +2475,7 @@ class AndroidProcessController(RemoteProcessController):
                 pass
             # The SDK is downloaded by test VMs instead of here.
             #run("sdkmanager \"{0}\"".format(sdk), stdout=True, stdin="yes", stdinRepeat=True) # yes to accept licenses
-            run("avdmanager -v create avd -k \"{0}\" -d \"Nexus 6\" -n IceTests".format(sdk))
+            run("avdmanager -v create avd -k \"{0}\" -d \"Nexus 6\" -n IceTests --force".format(sdk))
             self.startEmulator("IceTests")
         elif current.config.device != "usb":
             run("adb connect {}".format(current.config.device))
@@ -2625,7 +2666,7 @@ class BrowserProcessController(RemoteProcessController):
         self.url = None
         self.driver = None
         try:
-            cmd = "node -e \"require('./bin/HttpServer')()\""
+            cmd = "node --input-type=module -e \"import('./bin/HttpServer.mjs').then(m => m.default())\""
             cwd = current.testcase.getMapping().getPath()
             self.httpServer = Expect.Expect(cmd, cwd=cwd)
             self.httpServer.expect("listening on ports")
@@ -2688,9 +2729,7 @@ class BrowserProcessController(RemoteProcessController):
         # to register itself with this script.
         #
         testsuite = ""
-        if current.config.es5:
-            testsuite += "es5/"
-        elif isinstance(current.testcase.getMapping(), TypeScriptMapping):
+        if isinstance(current.testcase.getMapping(), TypeScriptMapping):
             testsuite += "typescript/"
         testsuite += str(current.testsuite)
 
@@ -2730,8 +2769,7 @@ class BrowserProcessController(RemoteProcessController):
                         if ident in self.processControllerProxies:
                             prx = self.processControllerProxies[ident]
                             break
-                        print("Please load http://{0}:8080/{1}".format(self.host,
-                                                                       "es5/start" if current.config.es5 else "start"))
+                        print("Please load http://{0}:8080/start".format(self.host))
                         self.cond.wait(5)
 
                 try:
@@ -2873,7 +2911,7 @@ class Driver:
     @classmethod
     def getSupportedArgs(self):
         return ("dlrR", ["debug", "driver=", "filter=", "rfilter=", "host=", "host-ipv6=", "host-bt=", "interface=",
-                         "controller-app", "valgrind", "languages=", "rlanguages="])
+                         "controller-app", "valgrind", "languages=", "rlanguages=", "keep-logs"])
 
     @classmethod
     def usage(self):
@@ -2895,6 +2933,7 @@ class Driver:
         print("--interface=<IP>      The multicast interface to use to discover controllers.")
         print("--controller-app      Start the process controller application.")
         print("--valgrind            Start executables with valgrind.")
+        print("--keep-logs           Keep log files from successful runs.")
 
     def __init__(self, options, component):
         self.component = component
@@ -2910,6 +2949,7 @@ class Driver:
         self.languages = [self.languages] if self.languages else []
         self.rlanguages = []
         self.failures = []
+        self.keepLogs = False
 
         parseOptions(self, options, { "d": "debug",
                                       "r" : "filters",
@@ -2918,7 +2958,8 @@ class Driver:
                                       "rfilter" : "rfilters",
                                       "host-ipv6" : "hostIPv6",
                                       "host-bt" : "hostBT",
-                                      "controller-app" : "controllerApp"})
+                                      "controller-app" : "controllerApp",
+                                      "keep-logs" : "keepLogs"})
 
         if self.languages:
             self.languages = [i for sublist in [l.split(",") for l in self.languages] for i in sublist]
@@ -3264,7 +3305,7 @@ class JavaMapping(Mapping):
         }[processType]
 
     def getSDKPackage(self):
-        return "system-images;android-33;google_apis;{}".format(
+        return "system-images;android-36.1;google_apis_playstore;{}".format(
             "arm64-v8a" if platform_machine() == "arm64" else "x86_64")
 
     def getApk(self, current):
@@ -3301,7 +3342,7 @@ class JavaCompatMapping(JavaMapping):
         return { "CLASSPATH" : os.pathsep.join(classPath) }
 
     def getSDKPackage(self):
-        return "system-images;android-33;google_apis;{}".format(
+        return "system-images;android-36.1;google_apis_playstore;{}".format(
             "arm64-v8a" if platform_machine() == "arm64" else "x86_64")
 
 class CSharpMapping(Mapping):
@@ -3316,17 +3357,21 @@ class CSharpMapping(Mapping):
         def usage(self):
             print("")
             print("C# mapping options:")
-            print("--framework=net45|net6.0|net7.0   Choose the framework used to run .NET tests")
+            print(
+                "--framework=net472|net48|net8.0|net10.0   Choose the framework used to run .NET tests"
+            )
 
         def __init__(self, options=[]):
             Mapping.Config.__init__(self, options)
 
             if self.framework == "":
-                self.framework = "net6.0"
+                self.framework = "net8.0"
 
-            self.dotnet = not isinstance(platform, Windows) or self.framework != "net45"
+            self.dotnet = not isinstance(
+                platform, Windows
+            ) or not self.framework.startswith("net4")
 
-            self.libTargetFramework = "netstandard2.0" if self.framework != "net45" else self.framework
+            self.libTargetFramework = "netstandard2.0"
             self.binTargetFramework = self.framework
             self.testTargetFramework = self.framework
 
@@ -3340,10 +3385,7 @@ class CSharpMapping(Mapping):
         return current.config.testTargetFramework
 
     def getBuildDir(self, name, current):
-        if current.config.framework in ["net45"]:
-            return os.path.join("msbuild", name, current.config.framework)
-        else:
-            return os.path.join("msbuild", name, "netstandard2.0", self.getTargetFramework(current))
+        return os.path.join("msbuild", name, self.getTargetFramework(current))
 
     def getSSLProps(self, process, current):
         props = Mapping.getSSLProps(self, process, current)
@@ -3403,13 +3445,20 @@ class CSharpMapping(Mapping):
     def _getDefaultExe(self, processType):
         return Mapping._getDefaultExe(self, processType).lower()
 
+    def getOptions(self, current):
+        # Disable IPv6 for .NET on macOS to workaround https://github.com/dotnet/runtime/issues/121848
+        return {"ipv6": [False]} if isinstance(platform, Darwin) else {}
+
     def getCommandLine(self, current, process, exe, args):
         if process.isFromBinDir():
             path = self.component.getBinDir(process, self, current)
         else:
             path = os.path.join(current.testcase.getPath(current), current.getBuildDir(exe))
 
-        useDotnetExe = process.isFromBinDir() and current.config.testTargetFramework != "net45"
+        useDotnetExe = (
+            process.isFromBinDir()
+            and not current.config.testTargetFramework.startswith("net4")
+        )
         command = ""
         if useDotnetExe:
             command += "dotnet "
@@ -3422,7 +3471,7 @@ class CSharpMapping(Mapping):
         return command
 
     def getSDKPackage(self):
-        return "system-images;android-33;google_apis;{}".format(
+        return "system-images;android-36.1;google_apis_playstore;{}".format(
             "arm64-v8a" if platform_machine() == "arm64" else "x86_64")
 
 class CppBasedMapping(Mapping):
@@ -3665,15 +3714,26 @@ class MatlabMapping(CppBasedClientMapping):
         mappingDesc = "MATLAB"
 
     def getCommandLine(self, current, process, exe, args):
-        matlabHome = os.getenv("MATLAB_HOME")
-        # -wait and -minimize are not available on Linux, -log causes duplicate output to stdout on Linux
-        return "{0} -nodesktop -nosplash{1} -r \"cd '{2}', runTest {3} {4} {5}\"".format(
-            "matlab" if matlabHome is None else os.path.join(matlabHome, "bin", "matlab"),
-            " -wait -log -minimize" if isinstance(platform, Windows) else "",
+        # The MATLAB_COMMAND environment variable can be used to specify the MATLAB command.
+        # This is currently used for GitHub Actions to specify the path to a custom MATLAB executable
+        # which is required to run the tests and does not need any additional arguments.
+        matlabCmd = os.getenv("MATLAB_COMMAND")
+
+        if not matlabCmd:
+            matlabHome = os.getenv("MATLAB_HOME")
+            # -wait and -minimize are not available on Linux, -log causes duplicate output to stdout on Linux
+            matlabCmd = "{0} -nodesktop -nosplash {1} -r".format(
+                "matlab" if matlabHome is None else os.path.join(matlabHome, "bin", "matlab"),
+                " -wait -log -minimize" if isinstance(platform, Windows) else "",
+            )
+
+        return "{0} \"cd('{1}');runTest {2} {3} {4}\"".format(
+            matlabCmd,
             os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "matlab", "test", "lib")),
             self.getTestCwd(process, current),
             current.driver.getComponent().getLibDir(process, self, current),
-            args)
+            args,
+        )
 
     def getServerMapping(self, testId=None):
         return Mapping.getByName("python") # Run clients against Python mapping servers
@@ -3693,10 +3753,6 @@ class MatlabMapping(CppBasedClientMapping):
 class JavaScriptMixin():
 
     def loadTestSuites(self, tests, config, filters, rfilters):
-        # Exclude es5 directory, these are the same tests but transpiled with babel the JavaScript mapping
-        # use them when --es5 option is set.
-        rfilters += [re.compile("es5/*")]
-
         # Exclude typescript directory when the mapping is not typescript otherwise we endup with duplicate entries
         if self.name != "typescript":
             rfilters += [re.compile("typescript/*")]
@@ -3746,13 +3802,12 @@ class JavaScriptMapping(JavaScriptMixin,Mapping):
 
         @classmethod
         def getSupportedArgs(self):
-            return ("", ["es5", "browser=", "worker"])
+            return ("", ["browser=", "worker"])
 
         @classmethod
         def usage(self):
             print("")
             print("JavaScript mapping options:")
-            print("--es5                 Use JavaScript ES5 (Babel compiled code).")
             print("--browser=<name>      Run with the given browser.")
             print("--worker              Run with Web workers enabled.")
 
@@ -3762,31 +3817,16 @@ class JavaScriptMapping(JavaScriptMixin,Mapping):
             if self.browser and self.protocol == "tcp":
                 self.protocol = "ws"
 
-            # Ie only support ES5 for now
-            if self.browser in ["Ie"]:
-                self.es5 = True
-
-    def getCommonDir(self, current):
-        if current.config.es5:
-            return os.path.join(self.getPath(), "test", "es5", "Common")
-        else:
-            return os.path.join(self.getPath(), "test", "Common")
-
     def _getDefaultSource(self, processType):
         return { "client" : "Client.js", "serveramd" : "ServerAMD.js", "server" : "Server.js" }[processType]
 
     def getTestCwd(self, process, current):
-        if current.config.es5:
-            # Change to the ES5 test directory if testing ES5
-            return os.path.join(self.path, "test", "es5", current.testcase.getTestSuite().getId())
-        else:
-            return os.path.join(self.path, "test", current.testcase.getTestSuite().getId())
+        return os.path.join(self.path, "test", current.testcase.getTestSuite().getId())
 
     def getOptions(self, current):
         options = JavaScriptMixin.getOptions(self, current)
         options.update({
-            "es5" : [True] if current.config.es5 else [False, True],
-            "worker" : [False, True] if current.config.browser and current.config.browser != "Ie" else [False],
+            "worker" : [False, True] if current.config.browser else [False],
         })
         return options
 
@@ -3842,7 +3882,7 @@ class SwiftMapping(Mapping):
             "macOS",
             current.config.buildConfig)
 
-        targetBuildDir = re.search("\sTARGET_BUILD_DIR = (.*)", run(cmd)).groups(1)[0]
+        targetBuildDir = re.search(r"\sTARGET_BUILD_DIR = (.*)", run(cmd)).groups(1)[0]
 
         testDriver = os.path.join(targetBuildDir, "TestDriver.app/Contents/MacOS/TestDriver")
         if not os.path.exists(testDriver):
@@ -3874,7 +3914,7 @@ class SwiftMapping(Mapping):
                           -sdk {2}".format(self.getXcodeProject(current),
                                            current.config.buildConfig,
                                            current.config.buildPlatform)
-        targetBuildDir = re.search("\sTARGET_BUILD_DIR = (.*)", run(cmd)).groups(1)[0]
+        targetBuildDir = re.search(r"\sTARGET_BUILD_DIR = (.*)", run(cmd)).groups(1)[0]
 
         testDriver = os.path.join(targetBuildDir, "TestDriver.app")
         if not os.path.exists(testDriver):

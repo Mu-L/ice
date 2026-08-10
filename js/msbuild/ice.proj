@@ -3,12 +3,12 @@
 
   <PropertyGroup>
     <NPM Condition="'$(NPM)' == ''">npm</NPM>
-    <Platform Condition="'$(Platform)' == ''">Win32</Platform>
+    <Platform Condition="'$(Platform)' == ''">x64</Platform>
     <Configuration Condition="'$(Configuration)' == ''">Release</Configuration>
   </PropertyGroup>
 
   <Target Name="Build">
-    <Exec Command="$(NPM) --omit=optional install"
+    <Exec Command="$(NPM) install"
           WorkingDirectory="$(MSBuildThisFileDirectory).."
           StdOutEncoding="utf-8"
           StdErrEncoding="utf-8" />
@@ -19,7 +19,7 @@
   </Target>
 
   <Target Name="Clean">
-    <Exec Command="$(NPM) --omit=optional install"
+    <Exec Command="$(NPM) install"
           WorkingDirectory="$(MSBuildThisFileDirectory).."
           StdOutEncoding="utf-8"
           StdErrEncoding="utf-8" />

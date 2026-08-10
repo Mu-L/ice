@@ -285,9 +285,9 @@ TransientTopicImpl::subscribeAndGetPublisher(const QoS& qos, const Ice::ObjectPr
             {
                 if(p != qos.begin())
                 {
-                    out << ',';
+                    out << ", ";
                 }
-
+                out << '[' << p->first << " = " << p->second << ']';
             }
         }
     }
@@ -497,6 +497,8 @@ TransientTopicImpl::destroy(const Ice::Current&)
     {
         // Ignore -- this could occur on shutdown.
     }
+
+    _instance->topicReaper()->add(_name);
 
     // Destroy all of the subscribers.
     for(vector<SubscriberPtr>::const_iterator p = _subscribers.begin(); p != _subscribers.end(); ++p)

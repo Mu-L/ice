@@ -106,7 +106,7 @@ class Buffer
             else
             {
                 const b = new Uint8Array(capacity);
-                b.set(new Uint8Array(this.b));
+                b.set(new Uint8Array(this.b, 0, this._limit));
                 this.b = b.buffer;
             }
             this.v = new DataView(this.b);
@@ -150,7 +150,7 @@ class Buffer
             {
                 throw new RangeError(bufferOverflowExceptionMsg);
             }
-            new Uint8Array(this.b, 0, this.b.byteLength).set(v, this._position);
+            new Uint8Array(this.b, this._position, v.byteLength).set(v);
             this._position += v.byteLength;
         }
     }
@@ -214,31 +214,6 @@ class Buffer
         this._position += 4;
         this.v.setInt32(this._position, v.high, true);
         this._position += 4;
-    }
-
-    writeString(stream, v)
-    {
-        //
-        // Encode the string as utf8
-        //
-        const encoded = unescape(encodeURIComponent(v));
-
-        stream.writeSize(encoded.length);
-        stream.expand(encoded.length);
-        this.putString(encoded, encoded.length);
-    }
-
-    putString(v, sz)
-    {
-        if(this._position + sz > this._limit)
-        {
-            throw new RangeError(bufferOverflowExceptionMsg);
-        }
-        for(let i = 0; i < sz; ++i)
-        {
-            this.v.setUint8(this._position, v.charCodeAt(i));
-            this._position++;
-        }
     }
 
     get()
@@ -341,21 +316,18 @@ class Buffer
         return new Long(high, low);
     }
 
-    getString(length)
+    // Returns a zero-copy Uint8Array view over the underlying ArrayBuffer and advances the position.
+    // Unlike getArray, the returned view shares memory with the buffer.
+    // Throws RangeError if there are not enough bytes remaining.
+    getView(length)
     {
         if(this._position + length > this._limit)
         {
             throw new RangeError(bufferUnderflowExceptionMsg);
         }
-
-        const data = new DataView(this.b, this._position, length);
-        let s = "";
-        for(let i = 0; i < length; ++i)
-        {
-            s += String.fromCharCode(data.getUint8(i));
-        }
+        const view = new Uint8Array(this.b, this._position, length);
         this._position += length;
-        return decodeURIComponent(escape(s));
+        return view;
     }
 
     get position()

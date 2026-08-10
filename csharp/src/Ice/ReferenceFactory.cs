@@ -605,7 +605,9 @@ namespace IceInternal
             EndpointI[] endpoints = null;
             string adapterId = "";
 
-            int sz = s.readSize();
+            // Each endpoint occupies at least 8 bytes on the wire (a 2-byte type plus a 6-byte minimum
+            // encapsulation), so readAndCheckSeqSize rejects an oversized count before we allocate.
+            int sz = s.readAndCheckSeqSize(8);
             if(sz > 0)
             {
                 endpoints = new EndpointI[sz];
@@ -686,9 +688,9 @@ namespace IceInternal
             //
             // Do not warn about unknown properties if Ice prefix, ie Ice, Glacier2, etc
             //
-            for(int i = 0; PropertyNames.clPropNames[i] != null; ++i)
+            foreach(string name in PropertyNames.clPropNames)
             {
-                if(prefix.StartsWith(PropertyNames.clPropNames[i] + ".", StringComparison.Ordinal))
+                if(prefix.StartsWith(string.Format("{0}.", name), StringComparison.Ordinal))
                 {
                     return;
                 }

@@ -104,7 +104,7 @@ public class AllTests
         Test.ServerFactoryPrx factory = Test.ServerFactoryPrxHelper.checkedCast(b);
 
         string defaultHost = communicator.getProperties().getProperty("Ice.Default.Host");
-        string defaultDir = testDir + "/../certs";
+        string defaultDir = testDir;
         Ice.Properties defaultProperties = communicator.getProperties();
         defaultProperties.setProperty("IceSSL.DefaultDir", defaultDir);
         defaultProperties.setProperty("Ice.Default.Host", defaultHost);
@@ -250,6 +250,32 @@ public class AllTests
                 Test.ServerFactoryPrx fact = Test.ServerFactoryPrxHelper.checkedCast(obj);
                 d = createServerProps(defaultProperties, "s_rsa_ca1", "cacert1");
                 d["IceSSL.VerifyPeer"] = "2";
+                Test.ServerPrx server = fact.createServer(d);
+                try
+                {
+                    server.ice_ping();
+                }
+                catch(Ice.LocalException ex)
+                {
+                    Console.WriteLine(ex.ToString());
+                    test(false);
+                }
+                fact.destroyServer(server);
+                comm.destroy();
+            }
+            Console.Out.WriteLine("ok");
+
+            Console.Out.Write("testing certificate without password... ");
+            Console.Out.Flush();
+            {
+                initData = createClientProps(defaultProperties, "password_less_client", "password_less_cacert");
+                initData.properties.setProperty("IceSSL.Password", "");
+                Ice.Communicator comm = Ice.Util.initialize(ref args, initData);
+
+                Test.ServerFactoryPrx fact = Test.ServerFactoryPrxHelper.checkedCast(comm.stringToProxy(factoryRef));
+                test(fact != null);
+                d = createServerProps(defaultProperties, "password_less_server", "password_less_cacert");
+                d["IceSSL.Password"] = "";
                 Test.ServerPrx server = fact.createServer(d);
                 try
                 {
@@ -1330,38 +1356,6 @@ public class AllTests
                     test(false);
                 }
             }
-#if NET45
-            {
-                //
-                // This should fail because the client ony enables SSLv3 and the server
-                // uses the default protocol set that disables SSLv3
-                //
-                initData = createClientProps(defaultProperties, "c_rsa_ca1", "cacert1");
-                initData.properties.setProperty("IceSSL.Protocols", "ssl3");
-                Ice.Communicator comm = Ice.Util.initialize(ref args, initData);
-                Test.ServerFactoryPrx fact = Test.ServerFactoryPrxHelper.checkedCast(comm.stringToProxy(factoryRef));
-                test(fact != null);
-                d = createServerProps(defaultProperties, "s_rsa_ca1", "cacert1");
-                d["IceSSL.VerifyPeer"] = "2";
-                Test.ServerPrx server = fact.createServer(d);
-                try
-                {
-                    server.ice_ping();
-                    test(false);
-                }
-                catch(Ice.ConnectionLostException)
-                {
-                    // Expected.
-                }
-                catch(Ice.LocalException ex)
-                {
-                    Console.WriteLine(ex.ToString());
-                    test(false);
-                }
-                fact.destroyServer(server);
-                comm.destroy();
-            }
-#endif
             Console.Out.WriteLine("ok");
 
             Console.Out.Write("testing expired certificates... ");
@@ -2301,8 +2295,8 @@ public class AllTests
                     "SUBJECTDN:'CN=Client, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US, E=info@zeroc.com'",
                     "ISSUER:'ZeroC, Inc.' SUBJECT:Client SERIAL:02",
                     "ISSUERDN:'CN=ZeroC Test CA 1, OU=Ice, O=\"ZeroC, Inc.\",L=Jupiter, S=Florida, C=US,E=info@zeroc.com' SUBJECT:Client",
-                    "THUMBPRINT:'8B D3 64 6B 9E 80 AE 56 08 05 0F C8 DE 9B B0 4B CC FD 4D 9C'",
-                    "SUBJECTKEYID:'7F 4D BF 80 65 E0 EE A4 18 D5 6A 87 33 63 B3 76 7D 42 82 06'"
+                    "THUMBPRINT:'91 3E 4E BF A5 D3 8F 50 69 6F 72 9E 6F 26 23 BD F1 31 7D F0'",
+                    "SUBJECTKEYID:'E3 6D D0 B7 A9 FA 66 70 52 55 01 86 A1 48 57 49 F0 03 5D 54'",
                 };
 
                 string[] serverFindCertProperties = new string[]
@@ -2310,8 +2304,8 @@ public class AllTests
                     "SUBJECTDN:'CN=Server, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US, E=info@zeroc.com'",
                     "ISSUER:'ZeroC, Inc.' SUBJECT:Server SERIAL:01",
                     "ISSUERDN:'CN=ZeroC Test CA 1, OU=Ice, O=\"ZeroC, Inc.\", L=Jupiter, S=Florida, C=US,E=info@zeroc.com' SUBJECT:Server",
-                    "THUMBPRINT:'F2 EB 9D E7 A5 DB 32 2B AC 5B 4F 88 8F 5E 62 57 2E 2F 7B 8C'",
-                    "SUBJECTKEYID:'EB 4A 7A 79 09 65 0F 45 40 E8 8C E6 A8 27 74 34 AB EA AF 48'"
+                    "THUMBPRINT:'53 AA 97 73 59 BD 46 92 4F 78 79 A8 68 B9 15 82 40 60 2A DE'",
+                    "SUBJECTKEYID:'7A C6 C0 D0 4C DE 61 B1 FB 5C 3D 58 84 8F 74 CE 4B 8A 1B 5C'",
                 };
 
                 string[] failFindCertProperties = new string[]
@@ -2430,96 +2424,6 @@ public class AllTests
                 }
                 Console.Out.WriteLine("ok");
             }
-
-            Console.Out.Write("testing system CAs... ");
-            Console.Out.Flush();
-            {
-                //
-                // Retry a few times in case there are connectivity problems with demo.zeroc.com.
-                //
-                const int retryMax = 5;
-                const int retryDelay = 1000;
-                int retryCount = 0;
-
-                initData = createClientProps(defaultProperties);
-                initData.properties.setProperty("IceSSL.DefaultDir", "");
-                initData.properties.setProperty("IceSSL.VerifyDepthMax", "5");
-                initData.properties.setProperty("Ice.Override.Timeout", "5000"); // 5s timeout
-                Ice.Communicator comm = Ice.Util.initialize(initData);
-                Ice.ObjectPrx p = comm.stringToProxy("dummy:wss -p 443 -h zeroc.com -r /demo-proxy/chat/glacier2");
-                while(true)
-                {
-                    try
-                    {
-                        p.ice_ping();
-                        test(false);
-                    }
-                    catch(Ice.SecurityException)
-                    {
-                        // Expected, by default we don't check for system CAs.
-                        break;
-                    }
-                    catch(Ice.LocalException ex)
-                    {
-                        if((ex is Ice.ConnectTimeoutException) ||
-                           (ex is Ice.SocketException) ||
-                           (ex is Ice.DNSException))
-                        {
-                            if(++retryCount < retryMax)
-                            {
-                                Console.Out.Write("retrying... ");
-                                Console.Out.Flush();
-                                Thread.Sleep(retryDelay);
-                                continue;
-                            }
-                        }
-
-                        Console.Out.WriteLine("warning: unable to connect to demo.zeroc.com to check system CA");
-                        Console.WriteLine(ex.ToString());
-                        break;
-                    }
-                }
-                comm.destroy();
-
-                retryCount = 0;
-                initData = createClientProps(defaultProperties);
-                initData.properties.setProperty("IceSSL.DefaultDir", "");
-                initData.properties.setProperty("IceSSL.VerifyDepthMax", "5");
-                initData.properties.setProperty("Ice.Override.Timeout", "5000"); // 5s timeout
-                initData.properties.setProperty("IceSSL.UsePlatformCAs", "1");
-                comm = Ice.Util.initialize(initData);
-                p = comm.stringToProxy("dummy:wss -p 443 -h zeroc.com -r /demo-proxy/chat/glacier2");
-                while(true)
-                {
-                    try
-                    {
-                        IceSSL.ConnectionInfo info = (IceSSL.ConnectionInfo)p.ice_getConnection().getInfo().underlying;
-                        test(info.verified);
-                        break;
-                    }
-                    catch(Ice.LocalException ex)
-                    {
-                        if((ex is Ice.ConnectTimeoutException) ||
-                           (ex is Ice.SocketException) ||
-                           (ex is Ice.DNSException))
-                        {
-                            if(++retryCount < retryMax)
-                            {
-                                Console.Out.Write("retrying... ");
-                                Console.Out.Flush();
-                                Thread.Sleep(retryDelay);
-                                continue;
-                            }
-                        }
-
-                        Console.Out.WriteLine("warning: unable to connect to demo.zeroc.com to check system CA");
-                        Console.WriteLine(ex.ToString());
-                        break;
-                    }
-                }
-                comm.destroy();
-            }
-            Console.Out.WriteLine("ok");
         }
         finally
         {

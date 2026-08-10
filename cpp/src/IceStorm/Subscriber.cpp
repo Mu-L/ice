@@ -784,7 +784,7 @@ Subscriber::error(bool dec, const Ice::Exception& e)
 
     //
     // It's possible to be already in the error state if the queue maximum size
-    // has been reached or if an ObjectNotExistException occured before.
+    // has been reached or if an ObjectNotExistException occurred before.
     //
     if(_state >= SubscriberStateError)
     {
@@ -927,7 +927,7 @@ Subscriber::shutdown()
     IceUtil::Monitor<IceUtil::RecMutex>::Lock sync(_lock);
 
     _shutdown = true;
-    while(_outstanding > 0 && !_events.empty())
+    while(_outstanding > 0 || !_events.empty())
     {
         _lock.wait();
     }
@@ -978,10 +978,10 @@ Subscriber::Subscriber(
     if(_instance->observer())
     {
         _observer.attach(_instance->observer()->getSubscriberObserver(_instance->serviceName(),
-                                                                      rec.topicName,
-                                                                      rec.obj,
-                                                                      rec.theQoS,
-                                                                      rec.theTopic,
+                                                                      _rec.topicName,
+                                                                      _rec.obj,
+                                                                      _rec.theQoS,
+                                                                      _rec.theTopic,
                                                                       toSubscriberState(_state),
                                                                       0));
     }

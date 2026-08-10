@@ -871,12 +871,12 @@ public final class ConnectionI extends com.zeroc.IceInternal.EventHandler
     }
 
     @Override
-    public synchronized void setAdapter(ObjectAdapter adapter)
+    public void setAdapter(ObjectAdapter adapter)
     {
         if(adapter != null)
         {
-            // Go through the adapter to set the adapter and servant manager on this connection
-            // to ensure the object adapter is still active.
+            // Go through the adapter to set the adapter on this connection to ensure the
+            // object adapter is still active and to ensure proper locking order.
             ((ObjectAdapterI)adapter).setAdapterOnConnection(this);
         }
         else
@@ -2634,6 +2634,19 @@ public final class ConnectionI extends com.zeroc.IceInternal.EventHandler
                         TraceUtil.traceRecv(info.stream, _logger, _traceLevels);
                         info.invokeNum = info.stream.readInt();
                         if(info.invokeNum < 0)
+                        {
+                            info.invokeNum = 0;
+                            throw new UnmarshalOutOfBoundsException();
+                        }
+
+                        //
+                        // A batched request occupies at least 12 bytes on the wire (a 2-byte identity, a
+                        // 1-byte facet path, a 1-byte operation name, a 1-byte operation mode, a 1-byte
+                        // context, and a 6-byte parameters encapsulation). Reject a count larger than the
+                        // remaining message data could possibly hold.
+                        //
+                        final int minBatchRequestSize = 12;
+                        if(info.invokeNum > (info.stream.size() - info.stream.pos()) / minBatchRequestSize)
                         {
                             info.invokeNum = 0;
                             throw new UnmarshalOutOfBoundsException();

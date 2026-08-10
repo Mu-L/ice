@@ -1,0 +1,32 @@
+ZeroC Ice DEB Distribution
+==========================
+
+The ZeroC Ice DEB distribution includes the following packages.
+
+Currently, the distribution supports Ubuntu 24.04, Ubuntu 22.04, Debian 12, and Debian 13, for both amd64 and arm64 architectures.
+
+DEB Package              Description
+-----------------------  ---------------------------------------------------------------
+libzeroc-ice-dev         Ice for C++ headers and development files
+libzeroc-ice3.7          Ice for C++ runtime libraries
+libzeroc-ice3.7-java     Ice for Java runtime libraries
+libzeroc-icestorm3.7     IceStorm publish-subscribe service library
+php-zeroc-ice            Ice for PHP
+python3-zeroc-ice        Ice for Python
+zeroc-glacier2           Glacier2 router
+zeroc-ice-all-dev        Ice development packages (meta package)
+zeroc-ice-all-runtime    Ice run-time packages (meta package)
+zeroc-ice-compilers      Slice compilers for all languages
+zeroc-ice-slice          Slice definition files
+zeroc-ice-utils          Admin utilities for Ice services
+zeroc-icebox             IceBox server for C++
+zeroc-icebridge          IceBridge service
+zeroc-icegrid            IceGrid service
+zeroc-icegridgui         IceGrid GUI application
+zeroc-icepatch2          IcePatch2 file distribution service
+
+For more information, visit:
+
+- ZeroC website: https://zeroc.com
+- Ice GitHub repository: https://github.com/zeroc-ice/ice
+- Ice Sample Programs: https://github.com/zeroc-ice/ice-demos/tree/3.7

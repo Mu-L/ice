@@ -970,8 +970,8 @@ public final class ConnectionI extends IceInternal.EventHandler
     {
         if(adapter != null)
         {
-            // Go through the adapter to set the adapter and servant manager on this connection
-            // to ensure the object adapter is still active.
+            // Go through the adapter to set the adapter on this connection to ensure the
+            // object adapter is still active and to ensure proper locking order.
             ((ObjectAdapterI)adapter).setAdapterOnConnection(this);
         }
         else
@@ -2143,7 +2143,7 @@ public final class ConnectionI extends IceInternal.EventHandler
                 setState(StateClosingPending);
 
                 //
-                // Notify the the transceiver of the graceful connection closure.
+                // Notify the transceiver of the graceful connection closure.
                 //
                 int op = _transceiver.closing(true, _exception);
                 if(op != 0)
@@ -2683,7 +2683,7 @@ public final class ConnectionI extends IceInternal.EventHandler
                         setState(StateClosingPending, new CloseConnectionException());
 
                         //
-                        // Notify the the transceiver of the graceful connection closure.
+                        // Notify the transceiver of the graceful connection closure.
                         //
                         int op = _transceiver.closing(false, _exception);
                         if(op != 0)
@@ -2728,6 +2728,19 @@ public final class ConnectionI extends IceInternal.EventHandler
                         IceInternal.TraceUtil.traceRecv(info.stream, _logger, _traceLevels);
                         info.invokeNum = info.stream.readInt();
                         if(info.invokeNum < 0)
+                        {
+                            info.invokeNum = 0;
+                            throw new UnmarshalOutOfBoundsException();
+                        }
+
+                        //
+                        // A batched request occupies at least 12 bytes on the wire (a 2-byte identity, a
+                        // 1-byte facet path, a 1-byte operation name, a 1-byte operation mode, a 1-byte
+                        // context, and a 6-byte parameters encapsulation). Reject a count larger than the
+                        // remaining message data could possibly hold.
+                        //
+                        final int minBatchRequestSize = 12;
+                        if(info.invokeNum > (info.stream.size() - info.stream.pos()) / minBatchRequestSize)
                         {
                             info.invokeNum = 0;
                             throw new UnmarshalOutOfBoundsException();

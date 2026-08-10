@@ -21,6 +21,14 @@ require("../Ice/UnknownSlicedValue");
 require("../Ice/Value");
 require("../Ice/Version");
 
+// Singleton TextEncoder for UTF-8 string encoding
+const textEncoder = new TextEncoder();
+
+// Reusable TextDecoder instance for UTF-8 string decoding.
+// - fatal: true throws on invalid UTF-8 sequences instead of replacing with U+FFFD
+// - ignoreBOM: true does not interpret a leading BOM as a special character
+const textDecoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
+
 const ArrayUtil = Ice.ArrayUtil;
 const Debug = Ice.Debug;
 const ExUtil = Ice.ExUtil;
@@ -35,16 +43,6 @@ const SliceType =
     NoSlice: 0,
     ValueSlice: 1,
     ExceptionSlice: 2
-};
-
-//
-// Number.isNaN polyfill for compatibility with IE
-//
-// see: https://developer.mozilla.org/en/docs/Web/JavaScript/Reference/Global_Objects/Number/isNaN
-//
-Number.isNaN = Number.isNaN || function(value)
-{
-    return typeof value === "number" && isNaN(value);
 };
 
 //
@@ -705,7 +703,14 @@ class EncapsDecoder11 extends EncapsDecoder
         if((this._current.sliceFlags & Protocol.FLAG_HAS_SLICE_SIZE) !== 0)
         {
             this._current.sliceSize = this._stream.readInt();
-            if(this._current.sliceSize < 4)
+            //
+            // A slice with optional members carries at least the 1-byte end marker in its body, so
+            // its size (which includes the 4-byte size field) must be >= 5. We rely on this in
+            // skipSlice's slice-preservation logic, which excludes the end marker by stepping back
+            // one byte.
+            //
+            const minSliceSize = (this._current.sliceFlags & Protocol.FLAG_HAS_OPTIONAL_MEMBERS) !== 0 ? 5 : 4;
+            if(this._current.sliceSize < minSliceSize)
             {
                 throw new Ice.UnmarshalOutOfBoundsException();
             }
@@ -1576,12 +1581,12 @@ class InputStream
         // top-level sequence or enclosed sequence it doesn't really matter).
         //
         // Otherwise, we are reading an enclosed sequence and we have to bump
-        // _minSeqSize by the minimum size that this sequence will  require on
+        // _minSeqSize by the minimum size that this sequence will require on
         // the stream.
         //
         // The goal of this check is to ensure that when we start unmarshaling
         // a new sequence, we check the minimal size of this new sequence against
-        // the estimated remaining buffer size. This estimatation is based on
+        // the estimated remaining buffer size. This estimation is based on
         // the minimum size of the enclosing sequences, it's _minSeqSize.
         //
         if(this._startSeq === -1 || this._buf.position > (this._startSeq + this._minSeqSize))
@@ -1741,21 +1746,17 @@ class InputStream
         {
             return "";
         }
-        //
-        // Check the buffer has enough bytes to read.
-        //
-        if(this._buf.remaining < len)
-        {
-            throw new Ice.UnmarshalOutOfBoundsException();
-        }
-
         try
         {
-            return this._buf.getString(len);
+            return textDecoder.decode(this._buf.getView(len));
         }
         catch(ex)
         {
-            throw new Ice.UnmarshalOutOfBoundsException();
+            if(ex instanceof RangeError)
+            {
+                throw new Ice.UnmarshalOutOfBoundsException();
+            }
+            throw new Ice.MarshalException("invalid UTF-8 string");
         }
     }
 
@@ -3185,7 +3186,10 @@ class OutputStream
         }
         else
         {
-            this._buf.writeString(this, v);
+            const encoded = textEncoder.encode(v);
+            this.writeSize(encoded.length);
+            this.expand(encoded.length);
+            this._buf.putArray(encoded);
         }
     }
 

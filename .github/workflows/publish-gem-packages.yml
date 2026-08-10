@@ -1,0 +1,74 @@
+name: "Publish GEM Packages"
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: "The release channel (e.g., 3.9, 3.8)"
+        required: true
+      quality:
+        description: "Release quality (e.g., stable, nightly, RC)"
+        required: true
+        default: "nightly"
+      run_id:
+        description: "The run ID to use for downloading artifacts"
+        required: true
+  workflow_call:
+    inputs:
+      channel:
+        required: true
+        type: string
+      quality:
+        required: true
+        type: string
+      run_id:
+        required: true
+        type: string
+
+jobs:
+  build:
+    name: "Publish GEM Packages"
+    runs-on: ubuntu-24.04
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Download GEM artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ inputs.run_id }}
+        run: |
+          gh run download "$RUN_ID" --repo zeroc-ice/ice --pattern "gem-packages" --dir staging
+
+      - name: Publish Nightly GEM Packages
+        if: ${{ inputs.quality == 'nightly' }}
+        run: |
+          curl -u "nightly:${NEXUS_NIGHTLY_PASSWORD}" \
+            --upload-file staging/gem-packages/zeroc-ice-*.gem \
+            --output /dev/null \
+            --silent \
+            --retry 3 \
+            --fail \
+            --show-error \
+            https://download.zeroc.com/nexus/repository/rubygems-${CHANNEL}-${QUALITY}/gems/ \
+            || { echo "Gem upload failed"; exit 1; }
+        env:
+          NEXUS_NIGHTLY_PASSWORD: ${{ secrets.NEXUS_NIGHTLY_PASSWORD }}
+          CHANNEL: ${{ inputs.channel }}
+          QUALITY: ${{ inputs.quality }}
+
+      - name: Publish Release GEM Packages
+        if: ${{ inputs.quality == 'stable' }}
+        run: |
+          # Get OIDC token from GitHub Actions
+          OIDC_TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=rubygems.org" | jq -r '.value')
+
+          # Exchange OIDC token for RubyGems API key
+          GEM_API_KEY=$(curl -sS -X POST "https://rubygems.org/api/v1/oidc/trusted_publisher/exchange_token" \
+            -H "Content-Type: application/json" \
+            -d "{\"jwt\": \"$OIDC_TOKEN\"}" | jq -r '.rubygems_api_key')
+
+          # Push the gem
+          GEM_HOST_API_KEY="$GEM_API_KEY" gem push staging/gem-packages/zeroc-ice-*.gem
